@@ -11,23 +11,14 @@ if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
   worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
   worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "")"
 
-  next="bash \"$SCRIPT_DIR/help.sh\""
   if [[ -n "$worktree_root" ]]; then
-    next="cd \"$worktree_root\" && bash \"$SCRIPT_DIR/status.sh\""
+    parafork_enable_worktree_logging "$worktree_root" "debug.sh" "$@"
   fi
+
+  next="bash \"$SCRIPT_DIR/init.sh\""
 
   parafork_print_kv SYMBOL_PATH "$symbol_path"
   parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$next"
-
-  if [[ -n "$worktree_root" && -f "$worktree_root/paradoc/Log.txt" ]]; then
-    ts="$(parafork_now_utc)"
-    {
-      echo "===== $ts debug.sh ====="
-      echo "pwd: $pwd"
-      echo "next: $next"
-      echo
-    } >>"$worktree_root/paradoc/Log.txt"
-  fi
 
   exit 0
 fi
@@ -79,4 +70,4 @@ chosen="${valid_worktrees[0]}"
 chosen_id="$(parafork_symbol_get "$chosen/.worktree-symbol" "WORKTREE_ID" || echo "UNKNOWN")"
 
 parafork_print_kv BASE_ROOT "$base_root"
-parafork_print_output_block "$chosen_id" "$pwd" "PASS" "cd \"$chosen\" && bash \"$SCRIPT_DIR/status.sh\""
+parafork_print_output_block "$chosen_id" "$pwd" "PASS" "cd \"$chosen\" && bash \"$SCRIPT_DIR/init.sh\""

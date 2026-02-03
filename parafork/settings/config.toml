@@ -9,7 +9,7 @@ root = ".parafork"
 rule = "{YYMMDD}-{HEX4}"
 
 [custom]
-autoplan = true
+autoplan = false # when true, init creates and check requires paradoc/Plan.md
 autoformat = true
 
 [control]

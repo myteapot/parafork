@@ -6,7 +6,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
 
 invocation_pwd="$(pwd -P)"
+original_args=("$@")
 
+mode="auto" # auto|new|reuse
 base_branch_override=""
 remote_override=""
 no_remote="false"
@@ -16,6 +18,20 @@ iam="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --new)
+      if [[ "$mode" != "auto" && "$mode" != "new" ]]; then
+        parafork_die "--new and --reuse are mutually exclusive"
+      fi
+      mode="new"
+      shift
+      ;;
+    --reuse)
+      if [[ "$mode" != "auto" && "$mode" != "reuse" ]]; then
+        parafork_die "--new and --reuse are mutually exclusive"
+      fi
+      mode="reuse"
+      shift
+      ;;
     --base-branch)
       base_branch_override="${2:-}"
       shift 2
@@ -42,9 +58,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'EOF'
-Usage: bash <PARAFORK_SCRIPTS>/init.sh [options]
+Usage: bash <PARAFORK_SCRIPTS>/init.sh [--new|--reuse] [options]
+
+Entry behavior:
+  - In base repo: no args defaults to --new
+  - Inside a worktree: no args FAIL (must choose --reuse or --new)
 
 Options:
+  --new                    Create a new worktree session
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1)
   --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
   --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
   --no-remote              Force REMOTE_NAME empty for this session
@@ -60,7 +82,78 @@ EOF
   esac
 done
 
-BASE_ROOT="$(parafork_git_toplevel || true)"
+pwd="$(pwd -P)"
+symbol_path=""
+in_worktree="false"
+symbol_worktree_id=""
+symbol_worktree_root=""
+symbol_base_root=""
+
+if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
+  parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
+  spec_version="$(parafork_symbol_get "$symbol_path" "PARAFORK_SPEC_VERSION" || true)"
+  if [[ "$parafork_worktree" != "1" || "$spec_version" != "13" ]]; then
+    parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "bash \"$SCRIPT_DIR/debug.sh\""
+    parafork_die "found .worktree-symbol but not a parafork v13 worktree: $symbol_path"
+  fi
+  in_worktree="true"
+  symbol_worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || true)"
+  symbol_worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || true)"
+  symbol_base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
+fi
+
+if [[ "$in_worktree" == "true" && "$mode" == "auto" ]]; then
+  if [[ -n "$symbol_worktree_root" ]]; then
+    parafork_enable_worktree_logging "$symbol_worktree_root" "init.sh" "${original_args[@]}"
+  fi
+  echo "REFUSED: init.sh called from inside a worktree without --reuse or --new"
+  parafork_print_kv SYMBOL_PATH "$symbol_path"
+  parafork_print_kv WORKTREE_ID "${symbol_worktree_id:-UNKNOWN}"
+  parafork_print_kv WORKTREE_ROOT "$symbol_worktree_root"
+  parafork_print_kv BASE_ROOT "$symbol_base_root"
+  echo
+  echo "Choose one:"
+  echo "- Reuse current worktree: bash \"$SCRIPT_DIR/init.sh\" --reuse"
+  echo "- Create new worktree:    bash \"$SCRIPT_DIR/init.sh\" --new"
+  parafork_print_output_block "${symbol_worktree_id:-UNKNOWN}" "$invocation_pwd" "FAIL" "bash \"$SCRIPT_DIR/init.sh\" --new"
+  exit 1
+fi
+
+if [[ "$in_worktree" != "true" && "$mode" == "reuse" ]]; then
+  parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "bash \"$SCRIPT_DIR/debug.sh\""
+  parafork_die "--reuse requires being inside an existing parafork worktree"
+fi
+
+if [[ "$mode" == "auto" ]]; then
+  mode="new"
+fi
+
+if [[ "$mode" == "reuse" ]]; then
+  if [[ -n "$base_branch_override" || -n "$remote_override" || "$no_remote" == "true" || "$no_fetch" == "true" || "$yes" == "true" || "$iam" == "true" ]]; then
+    parafork_die "--reuse cannot be combined with worktree creation options"
+  fi
+
+  worktree_id="${symbol_worktree_id:-UNKNOWN}"
+  worktree_root="$symbol_worktree_root"
+  [[ -n "$worktree_root" ]] || parafork_die "missing WORKTREE_ROOT in .worktree-symbol: $symbol_path"
+
+  parafork_enable_worktree_logging "$worktree_root" "init.sh" "${original_args[@]}"
+
+  parafork_symbol_set "$symbol_path" "WORKTREE_USED" "1"
+
+  echo "MODE=reuse"
+  parafork_print_kv WORKTREE_USED "1"
+  parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && bash \"$SCRIPT_DIR/status.sh\""
+  exit 0
+fi
+
+BASE_ROOT=""
+if [[ "$in_worktree" == "true" ]]; then
+  BASE_ROOT="$symbol_base_root"
+else
+  BASE_ROOT="$(parafork_git_toplevel || true)"
+fi
+
 if [[ -z "$BASE_ROOT" ]]; then
   parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "cd <BASE_ROOT> && bash \"$SCRIPT_DIR/init.sh\""
   parafork_die "not in a git repo"
@@ -76,6 +169,7 @@ config_base_branch="$(parafork_toml_get_str "$CONFIG_PATH" "base" "branch" "main
 config_remote_name="$(parafork_toml_get_str "$CONFIG_PATH" "remote" "name" "")"
 workdir_root="$(parafork_toml_get_str "$CONFIG_PATH" "workdir" "root" ".parafork")"
 workdir_rule="$(parafork_toml_get_str "$CONFIG_PATH" "workdir" "rule" "{YYMMDD}-{HEX4}")"
+autoplan="$(parafork_toml_get_bool "$CONFIG_PATH" "custom" "autoplan" "true")"
 
 BASE_BRANCH_SOURCE="config"
 BASE_BRANCH="$config_base_branch"
@@ -159,6 +253,8 @@ git -C "$BASE_ROOT" worktree add "$WORKTREE_ROOT" -b "$WORKTREE_BRANCH" "$WORKTR
 CREATED_AT="$(parafork_now_utc)"
 SYMBOL_PATH="$WORKTREE_ROOT/.worktree-symbol"
 
+parafork_enable_worktree_logging "$WORKTREE_ROOT" "init.sh" "${original_args[@]}"
+
 cat >"$SYMBOL_PATH" <<EOF
 PARAFORK_WORKTREE=1
 PARAFORK_SPEC_VERSION=13
@@ -167,6 +263,7 @@ BASE_ROOT=$BASE_ROOT
 WORKTREE_ROOT=$WORKTREE_ROOT
 WORKTREE_BRANCH=$WORKTREE_BRANCH
 WORKTREE_START_POINT=$WORKTREE_START_POINT
+WORKTREE_USED=1
 BASE_BRANCH=$BASE_BRANCH
 REMOTE_NAME=$REMOTE_NAME
 BASE_BRANCH_SOURCE=$BASE_BRANCH_SOURCE
@@ -193,7 +290,7 @@ append_unique_line "$worktree_exclude_path" "/paradoc/"
 
 mkdir -p "$WORKTREE_ROOT/paradoc"
 
-for doc in Plan Exec Merge; do
+for doc in Exec Merge; do
   src="$PARAFORK_ROOT/assets/$doc.md"
   dst="$WORKTREE_ROOT/paradoc/$doc.md"
   if [[ ! -f "$src" ]]; then
@@ -205,22 +302,23 @@ for doc in Plan Exec Merge; do
   cp "$src" "$dst"
 done
 
-LOG_FILE="$WORKTREE_ROOT/paradoc/Log.txt"
-touch "$LOG_FILE"
-{
-  echo "===== $CREATED_AT init.sh ====="
-  echo "WORKTREE_ID=$WORKTREE_ID"
-  echo "WORKTREE_ROOT=$WORKTREE_ROOT"
-  echo "WORKTREE_BRANCH=$WORKTREE_BRANCH"
-  echo "WORKTREE_START_POINT=$WORKTREE_START_POINT"
-  echo "BASE_BRANCH=$BASE_BRANCH ($BASE_BRANCH_SOURCE)"
-  echo "REMOTE_NAME=$REMOTE_NAME ($REMOTE_NAME_SOURCE)"
-  echo
-} >>"$LOG_FILE"
+if [[ "$autoplan" == "true" ]]; then
+  src="$PARAFORK_ROOT/assets/Plan.md"
+  dst="$WORKTREE_ROOT/paradoc/Plan.md"
+  if [[ ! -f "$src" ]]; then
+    parafork_die "missing template: $src"
+  fi
+  if [[ -f "$dst" ]]; then
+    parafork_die "refuse to overwrite: $dst"
+  fi
+  cp "$src" "$dst"
+fi
 
 START_COMMIT="$(git -C "$WORKTREE_ROOT" rev-parse --short HEAD)"
 BASE_COMMIT="$(git -C "$BASE_ROOT" rev-parse --short "$WORKTREE_START_POINT")"
 
+echo "MODE=new"
+parafork_print_kv AUTOPLAN "$autoplan"
 parafork_print_kv WORKTREE_ROOT "$WORKTREE_ROOT"
 parafork_print_kv WORKTREE_START_POINT "$WORKTREE_START_POINT"
 parafork_print_kv START_COMMIT "$START_COMMIT"

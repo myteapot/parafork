@@ -1,5 +1,8 @@
 # 如何写 `paradoc/Plan.md`
 
+> 说明：默认 `settings/config.toml` 的 `custom.autoplan=false`，因此新 worktree 不会自动创建 `paradoc/Plan.md`，且 `check.sh` 默认也不会要求它存在。  
+> 当你把 `custom.autoplan=true`（或使用 `check.sh --strict`）时，本指南适用并会被机械检查。
+
 目标：让 maintainer 能机械判定“要做什么 / 进度如何 / 怎么验收”，并让 contributor 按 task 微循环稳定推进。
 
 ## 1) 结构（必须）

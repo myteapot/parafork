@@ -55,27 +55,35 @@ exec_file="$WORKTREE_ROOT/paradoc/Exec.md"
 merge_file="$WORKTREE_ROOT/paradoc/Merge.md"
 log_file="$WORKTREE_ROOT/paradoc/Log.txt"
 
-for f in "$plan_file" "$exec_file" "$merge_file" "$log_file"; do
-  if [[ ! -f "$f" ]]; then
-    errors+=("missing file: $f")
-  fi
-done
-
 config_path=""
 autoformat="true"
+autoplan="true"
 if [[ -n "$BASE_ROOT" ]]; then
   config_path="$(parafork_config_path_from_base "$BASE_ROOT")"
 fi
 
 if [[ -n "$config_path" && -f "$config_path" ]]; then
   autoformat="$(parafork_toml_get_bool "$config_path" "custom" "autoformat" "true")"
+  autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "true")"
 fi
 
 if [[ "$strict" == "true" ]]; then
   autoformat="true"
+  autoplan="true"
 fi
 
-if [[ -f "$plan_file" && "$autoformat" == "true" ]]; then
+required_files=("$exec_file" "$merge_file" "$log_file")
+if [[ "$autoplan" == "true" ]]; then
+  required_files+=("$plan_file")
+fi
+
+for f in "${required_files[@]}"; do
+  if [[ ! -f "$f" ]]; then
+    errors+=("missing file: $f")
+  fi
+done
+
+if [[ -f "$plan_file" && "$autoplan" == "true" && "$autoformat" == "true" ]]; then
   grep -Fq "## Milestones" "$plan_file" || errors+=("Plan.md missing heading: ## Milestones")
   grep -Fq "## Tasks" "$plan_file" || errors+=("Plan.md missing heading: ## Tasks")
   grep -Eq '^- \[.\] ' "$plan_file" || errors+=("Plan.md has no checkboxes")
@@ -94,11 +102,15 @@ if [[ -f "$merge_file" && "$autoformat" == "true" ]]; then
 fi
 
 if [[ "$phase" == "merge" || "$strict" == "true" ]]; then
-  for f in "$plan_file" "$exec_file" "$merge_file"; do
+  for f in "$exec_file" "$merge_file"; do
     if [[ -f "$f" ]] && grep -Eq 'PARAFORK_TBD|TODO_TBD' "$f"; then
       errors+=("placeholder remains: $f")
     fi
   done
+
+  if [[ "$autoplan" == "true" && -f "$plan_file" ]] && grep -Eq 'PARAFORK_TBD|TODO_TBD' "$plan_file"; then
+    errors+=("placeholder remains: $plan_file")
+  fi
 fi
 
 if [[ "$phase" == "merge" ]]; then
@@ -113,14 +125,14 @@ if [[ "$phase" == "merge" ]]; then
   fi
 fi
 
-  if [[ ${#errors[@]} -gt 0 ]]; then
-    echo "CHECK_RESULT=FAIL"
-    for e in "${errors[@]}"; do
-      echo "FAIL: $e"
-    done
-    parafork_print_output_block "$WORKTREE_ID" "$pwd" "FAIL" "fix issues and rerun: bash \"$SCRIPT_DIR/check.sh\" --phase $phase"
-    exit 1
-  fi
+if [[ ${#errors[@]} -gt 0 ]]; then
+  echo "CHECK_RESULT=FAIL"
+  for e in "${errors[@]}"; do
+    echo "FAIL: $e"
+  done
+  parafork_print_output_block "$WORKTREE_ID" "$pwd" "FAIL" "fix issues and rerun: bash \"$SCRIPT_DIR/check.sh\" --phase $phase"
+  exit 1
+fi
 
-  echo "CHECK_RESULT=PASS"
-  parafork_print_output_block "$WORKTREE_ID" "$pwd" "PASS" "bash \"$SCRIPT_DIR/status.sh\""
+echo "CHECK_RESULT=PASS"
+parafork_print_output_block "$WORKTREE_ID" "$pwd" "PASS" "bash \"$SCRIPT_DIR/status.sh\""

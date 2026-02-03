@@ -206,6 +206,39 @@ parafork_symbol_get() {
   return 1
 }
 
+parafork_symbol_set() {
+  local symbol_path="$1"
+  local key="$2"
+  local value="$3"
+
+  [[ -f "$symbol_path" ]] || return 1
+
+  local tmp
+  tmp="$(mktemp)"
+
+  local found="false"
+  local line k
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == *"="* ]]; then
+      k="${line%%=*}"
+      if [[ "$k" == "$key" ]]; then
+        printf '%s=%s\n' "$key" "$value" >>"$tmp"
+        found="true"
+        continue
+      fi
+    fi
+
+    printf '%s\n' "$line" >>"$tmp"
+  done <"$symbol_path"
+
+  if [[ "$found" != "true" ]]; then
+    printf '%s=%s\n' "$key" "$value" >>"$tmp"
+  fi
+
+  cat "$tmp" >"$symbol_path"
+  rm -f "$tmp"
+}
+
 parafork_guard_worktree_root() {
   local script_basename="$1"
   shift || true
@@ -253,6 +286,14 @@ parafork_guard_worktree_root() {
 
   if [[ -z "$worktree_root" ]]; then
     parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "bash \"$debug_path\""
+    return 1
+  fi
+
+  local worktree_used=""
+  worktree_used="$(parafork_symbol_get "$symbol_path" "WORKTREE_USED" || true)"
+  if [[ "$worktree_used" != "1" ]]; then
+    echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "bash \"$init_path\" --reuse"
     return 1
   fi
 

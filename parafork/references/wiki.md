@@ -97,10 +97,10 @@ SSOT（单一事实来源）在本仓库外的设计文档：
 <BASE_ROOT>/.parafork/<WORKTREE_ID>/
   .worktree-symbol
   paradoc/
-    Plan.md
     Exec.md
     Merge.md
     Log.txt
+    Plan.md        # optional; only when custom.autoplan=true
 ```
 
 并修改（追加）：
@@ -130,6 +130,7 @@ SSOT（单一事实来源）在本仓库外的设计文档：
 - `WORKTREE_ROOT`
 - `WORKTREE_BRANCH`（默认 `parafork/<WORKTREE_ID>`）
 - `WORKTREE_START_POINT`（`REMOTE/BASE_BRANCH` 或 `BASE_BRANCH`）
+- `WORKTREE_USED`（`0|1`；顺序门闩，worktree-only 脚本要求为 `1`）
 - `BASE_BRANCH` / `REMOTE_NAME`
 - `BASE_BRANCH_SOURCE` / `REMOTE_NAME_SOURCE`（`config|cli|none`）
 - `CREATED_AT`（UTC）
@@ -141,13 +142,13 @@ SSOT（单一事实来源）在本仓库外的设计文档：
 
 ### 4.2 `paradoc/`（审计材料）
 
-- `paradoc/Plan.md`：必须包含 `## Milestones`、`## Tasks` 且使用 checkbox
+- `paradoc/Plan.md`（可选；仅 `custom.autoplan=true` 时创建并纳入检查）：必须包含 `## Milestones`、`## Tasks` 且使用 checkbox
 - `paradoc/Exec.md`：只写 What/Why/Verify（脚本输出在 `Log.txt`）
 - `paradoc/Merge.md`：必须含 “Acceptance / Repro” 关键字（用于 `check.sh` 机械判定）
 - `paradoc/Log.txt`：脚本输出（append-only），应包含时间戳段与 `exit: <code>`
 
 模板来源：
-- `init.sh` 从 `<PARAFORK_ROOT>/assets/{Plan,Exec,Merge}.md` 拷贝到 `<WORKTREE_ROOT>/paradoc/`
+- `init.sh` 从 `<PARAFORK_ROOT>/assets/{Exec,Merge}.md` 拷贝到 `<WORKTREE_ROOT>/paradoc/`，并按 `custom.autoplan` 决定是否创建 `Plan.md`
 
 ---
 
@@ -173,7 +174,7 @@ root = ".parafork"     # session 容器目录名（在 BASE_ROOT 下）
 rule = "{YYMMDD}-{HEX4}"
 
 [custom]
-autoplan = true        # 预留：当前实现未使用
+autoplan = false       # init/check 是否启用 paradoc/Plan.md（true=创建+检查）
 autoformat = true      # check.sh 的文档结构/占位符检查开关
 
 [control]
@@ -212,11 +213,15 @@ NEXT=<copy/paste next step>
 ## 7. 工作流（推荐最短路径）
 
 Contributor 最短路径（典型）：
-1) 在目标仓库任意子目录：运行 `init.sh` 创建 worktree
+1) 在目标仓库任意子目录运行 `init.sh`：
+   - base repo：无参默认创建新 worktree
+   - 已在某个 worktree 内：必须显式二选一 `--reuse`（继续当前）或 `--new`（新开）
 2) `cd "$WORKTREE_ROOT"` 进入 worktree 根目录
 3) `status.sh` 查看摘要状态
-4) 填写/更新 `paradoc/Plan.md`，按任务微循环推进：
-   - 更新 Plan → `commit.sh --message "..."` → 更新 Exec
+4) 按 task 微循环推进：
+   - 用模型 plan 工具规划/更新（优先遵守人类提供的 plan）
+   - `commit.sh --message "..."` 保存进度 → 更新 `paradoc/Exec.md`
+   - 仅当 `custom.autoplan=true` 时维护 `paradoc/Plan.md`（会被 `check.sh` 纳入检查）
 5) 完成后写 `paradoc/Merge.md`（必须有验收/复现步骤）
 6) maintainer 批准后在 worktree 根目录运行 `merge.sh` 合并回 base
 
@@ -253,21 +258,23 @@ Maintainer 把关点：
 副作用：
 - 无（不写入 repo）
 
-### 8.2 `scripts/init.sh`（base-allowed，创建 session）
+### 8.2 `scripts/init.sh`（base-allowed，唯一入口）
 
 目的：
-- 创建 worktree session
-- 写 `.worktree-symbol`
-- 初始化 `paradoc/*`
-- 写 base/worktree 两处 exclude（闭环防污染）
+- 唯一入口（顺序门闩）：
+  - `--new` 创建新 worktree session
+  - `--reuse` 明确继续当前 worktree（写入 `.worktree-symbol: WORKTREE_USED=1`）
+- 创建新 session 时：写 `.worktree-symbol`、初始化 `paradoc/*`、写 base/worktree exclude（闭环防污染）
 
 用法：
 
 ```bash
-bash <PARAFORK_SCRIPTS>/init.sh [options]
+bash <PARAFORK_SCRIPTS>/init.sh [--new|--reuse] [options]
 ```
 
-参数（当前实现）：
+参数：
+- `--new`：创建新 worktree（base repo 下无参默认等同 `--new`；worktree 内建议显式写出）
+- `--reuse`：继续当前 worktree（仅当当前目录向上能找到 parafork 的 `.worktree-symbol` 时允许；不可与创建类参数混用）
 - `--base-branch <branch>`：覆盖本次 session 的 `BASE_BRANCH`（并写入 `BASE_BRANCH_SOURCE=cli`）
 - `--remote <name>`：覆盖本次 session 的 `REMOTE_NAME`（并写入 `REMOTE_NAME_SOURCE=cli`）
 - `--no-remote`：强制本次 `REMOTE_NAME` 为空（`REMOTE_NAME_SOURCE=none`）
@@ -275,7 +282,9 @@ bash <PARAFORK_SCRIPTS>/init.sh [options]
 - `--yes`、`--i-am-maintainer`：危险参数的 CLI 门闩
 
 关键行为：
-- 计算 `BASE_ROOT`（必须在 git repo 内）
+- 若当前目录在某个 worktree 内：无参直接 FAIL，要求显式二选一 `--reuse|--new`
+- `--reuse`：更新 `.worktree-symbol: WORKTREE_USED=1`，并输出下一步
+- `--new`：计算 `BASE_ROOT`（必须在 git repo 内；若当前在 worktree 内则使用 symbol 中的 `BASE_ROOT`，避免套 worktree）
 - 读取 `settings/config.toml`（至少：`base.branch/remote.name/workdir.*`）
 - 判定 remote 是否可用：
   - `REMOTE_NAME` 非空，且 `git -C "$BASE_ROOT" remote get-url "$REMOTE_NAME"` 成功
@@ -290,8 +299,8 @@ bash <PARAFORK_SCRIPTS>/init.sh [options]
 - 写 exclude（追加且去重）：
   - base：`/<workdir.root>/`
   - worktree：`/.worktree-symbol`、`/paradoc/`
-- 拷贝模板：`assets/{Plan,Exec,Merge}.md -> paradoc/`
-- 初始化 `paradoc/Log.txt`（写入 init header）
+- 拷贝模板：`assets/{Exec,Merge}.md -> paradoc/`，并按 `custom.autoplan` 决定是否创建 `Plan.md`
+- 初始化 `paradoc/Log.txt`（并记录脚本输出与 exit code）
 
 输出：
 - `WORKTREE_ROOT/WORKTREE_START_POINT/START_COMMIT/BASE_COMMIT` 的 `KEY=VALUE` 行
@@ -310,13 +319,11 @@ bash <PARAFORK_SCRIPTS>/init.sh [options]
 行为（分支）：
 - 若从当前目录向上找到 `.worktree-symbol`：
   - 输出 `SYMBOL_PATH=...`
-  - 输出块 `NEXT` 指向：
-    - 若能读到 `WORKTREE_ROOT`：`cd "$WORKTREE_ROOT" && status.sh`
-    - 否则：`help.sh`
-  - 若能唯一定位 worktree 且存在 `paradoc/Log.txt`：会追加一段 debug 记录到该 Log.txt
+  - 输出块 `NEXT` 指向：`init.sh`（在 worktree 内无参会要求显式 `--reuse|--new`）
+  - 若能定位 `WORKTREE_ROOT`：脚本输出会记录到该 worktree 的 `paradoc/Log.txt`
 - 若未找到 symbol，但在 git repo 内：
   - 读取 `workdir.root`，查找 `<BASE_ROOT>/<workdir.root>/` 下的候选 worktree（新到旧）
-  - 输出列表并默认选择最新的一个，给出 `cd ... && status.sh`
+  - 输出列表并默认选择最新的一个，给出 `cd ... && init.sh`
 - 若完全不在 git repo：
   - FAIL + 提示 `cd <BASE_ROOT> && init.sh`
 
@@ -327,6 +334,9 @@ bash <PARAFORK_SCRIPTS>/init.sh [options]
 
 用法：
 - `bash <PARAFORK_SCRIPTS>/status.sh`
+
+前置：
+- 顺序门闩：要求 `.worktree-symbol: WORKTREE_USED=1`；若为旧 worktree 或未明确进入，先跑 `init.sh --reuse`
 
 输出：
 - `BRANCH/HEAD/CHANGES/BASE_BRANCH/REMOTE_NAME/WORKTREE_BRANCH`
@@ -349,14 +359,16 @@ bash <PARAFORK_SCRIPTS>/check.sh [--phase plan|exec|merge] [--strict]
 
 检查项（当前实现摘要）：
 - 必须存在文件：
-  - `paradoc/Plan.md`, `paradoc/Exec.md`, `paradoc/Merge.md`, `paradoc/Log.txt`
+  - 必需：`paradoc/Exec.md`, `paradoc/Merge.md`, `paradoc/Log.txt`
+  - 可选：`paradoc/Plan.md`（仅 `custom.autoplan=true` 或 `--strict` 时要求存在并检查）
 - 文档结构检查（受 `custom.autoformat` 控制；`--strict` 强制开启）：
-  - Plan 必须含 `## Milestones`、`## Tasks`
-  - Plan 必须至少有一个 checkbox 行（`- [.] `）
-  - merge 阶段要求 tasks 完成：拒绝存在未完成的 `- [ ] T<number>` 行
+  - 当启用 Plan（`custom.autoplan=true` 或 `--strict`）时：
+    - Plan 必须含 `## Milestones`、`## Tasks`
+    - Plan 必须至少有一个 checkbox 行（`- [.] `）
+    - merge 阶段要求 tasks 完成：拒绝存在未完成的 `- [ ] T<number>` 行
   - Merge.md 必须包含 `Acceptance` 或 `Repro` 关键字（不区分大小写）
 - 占位符检查（merge 或 strict）：
-  - `PARAFORK_TBD` / `TODO_TBD` 不能残留在 Plan/Exec/Merge
+  - `PARAFORK_TBD` / `TODO_TBD` 不能残留在 Exec/Merge（启用 Plan 时也会检查 Plan）
 - git 污染闭环（仅 merge 阶段）：
   - `git ls-files -- 'paradoc/'` 必须为空（不能被 tracked）
   - `git ls-files -- '.worktree-symbol'` 必须为空（不能被 tracked）
