@@ -1,6 +1,6 @@
 ---
 name: parafork
-description: "Parafork 合并版（general）：同一 skill 包内同时提供 bash 与 Windows PowerShell 脚本实现。根据系统选择 `bash-scripts/` 或 `powershell-scripts/` 运行。脚本优先的 Git worktree 工作流：init/status/check/commit/pull/merge/debug。包含严格的 worktree-root guard、WORKTREE_USED 顺序门闩、autoplan 默认关闭、审计日志、remote base 对齐，以及防止提交 paradoc/.worktree-symbol。"
+description: "包含严格的 worktree-root guard、WORKTREE_USED 顺序门闩、autoplan 默认关闭、审计日志、remote base 对齐，以及防止提交 paradoc/.worktree-symbol。根据系统选择 `bash-scripts/` 或 `powershell-scripts/` 运行。脚本优先的 Git worktree 工作流：init/status/check/commit/pull/merge/debug。"
 ---
 
 # Parafork（general）
@@ -20,7 +20,7 @@ description: "Parafork 合并版（general）：同一 skill 包内同时提供 
 
 > 重要：两套实现都遵循同一套硬门闩与审计规则（见下文 MUST）。
 
-## 快速开始（Windows PowerShell）
+## 执行规范（Windows PowerShell）
 
 1) 运行唯一入口 `init.ps1`：
    - 在 base repo：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\init.ps1"`（无参默认创建新 worktree）
@@ -40,7 +40,7 @@ description: "Parafork 合并版（general）：同一 skill 包内同时提供 
    - 一次性批准：`set PARAFORK_APPROVE_MERGE=1`（或本地 git config）
    - 运行：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\merge.ps1" --yes --i-am-maintainer`
 
-## 快速开始（Bash）
+## 执行规范（Bash）
 
 1) 运行唯一入口 `init.sh`：
    - 在 base repo：`bash "<PARAFORK_BASH_SCRIPTS>/init.sh"`（无参默认创建新 worktree）
@@ -61,6 +61,7 @@ description: "Parafork 合并版（general）：同一 skill 包内同时提供 
 
 ## 硬规则（MUST）
 
+- 在完成流程后必须显式申请人类同意才能merge回主仓库
 - 唯一入口是 `init`（`init.sh` 或 `init.ps1`）；在 worktree 内无参运行会 FAIL，必须显式 `--reuse` 或 `--new`。
 - worktree-only 脚本只能在 `WORKTREE_ROOT` 运行；不确定位置先跑 `debug`（`debug.sh` / `debug.ps1`）。
 - worktree-only 脚本要求 `.worktree-symbol: WORKTREE_USED=1`（顺序门闩）：旧 worktree 需先 `init --reuse` 补写。
