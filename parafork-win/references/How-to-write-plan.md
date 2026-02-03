@@ -1,7 +1,7 @@
 # 如何写 `paradoc/Plan.md`
 
-> 说明：默认 `settings/config.toml` 的 `custom.autoplan=false`，因此新 worktree 不会自动创建 `paradoc/Plan.md`，且 `check`（`check.sh` / `check.ps1`）默认也不会要求它存在。  
-> 当你把 `custom.autoplan=true`（或使用 `check --strict`）时，本指南适用并会被机械检查。
+> 说明：默认 `settings/config.toml` 的 `custom.autoplan=false`，因此新 worktree 不会自动创建 `paradoc/Plan.md`，且 `check.ps1` 默认也不会要求它存在。  
+> 当你把 `custom.autoplan=true`（或使用 `check.ps1 --strict`）时，本指南适用并会被机械检查。
 
 目标：让 maintainer 能机械判定“要做什么 / 进度如何 / 怎么验收”，并让 contributor 按 task 微循环稳定推进。
 
@@ -46,11 +46,10 @@ Plan 必须包含两个标题（严格字符串）：
 
 完成一个 task（或达到可提交的最小增量）就做一次：
 1) 更新 Plan（勾选/状态）
-2) 运行提交脚本保存进度：`commit.sh --message "..."` 或 `commit.ps1 --message "..."`
+2) `commit.ps1 --message "..."` 保存进度
 3) 更新 `paradoc/Exec.md`（What/Why/Verify）
 
 ## 5) 常见坑
 
-- 只写 TODO、不写验收：会导致 merge 阶段 `check` 难以通过，也让 maintainer 无法复刻。
+- 只写 TODO、不写验收：会导致 merge 阶段 `check.ps1` 难以通过，也让 maintainer 无法复刻。
 - task 太大：拆小到“1–2 次 commit 可完成”的粒度。
-

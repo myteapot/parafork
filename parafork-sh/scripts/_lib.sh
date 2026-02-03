@@ -270,13 +270,6 @@ parafork_guard_worktree_root() {
     return 1
   fi
 
-  local spec_version=""
-  spec_version="$(parafork_symbol_get "$symbol_path" "PARAFORK_SPEC_VERSION" || true)"
-  if [[ "$spec_version" != "13" ]]; then
-    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "bash \"$debug_path\""
-    return 1
-  fi
-
   local worktree_id=""
   worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || true)"
   [[ -n "$worktree_id" ]] || worktree_id="UNKNOWN"

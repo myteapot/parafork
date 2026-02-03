@@ -1,0 +1,17 @@
+[base]
+branch = "main"
+
+[remote]
+name = "origin"
+
+[workdir]
+root = ".parafork"
+rule = "{YYMMDD}-{HEX4}"
+
+[custom]
+autoplan = false # when true, init creates and check requires paradoc/Plan.md
+autoformat = true
+
+[control]
+squash = true
+

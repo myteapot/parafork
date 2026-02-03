@@ -9,8 +9,7 @@ pwd="$(pwd -P)"
 
 if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
   parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
-  spec_version="$(parafork_symbol_get "$symbol_path" "PARAFORK_SPEC_VERSION" || true)"
-  if [[ "$parafork_worktree" == "1" && "$spec_version" == "13" ]]; then
+  if [[ "$parafork_worktree" == "1" ]]; then
     worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || true)"
     if [[ -n "$worktree_root" ]]; then
       parafork_enable_worktree_logging "$worktree_root" "help.sh" "$@"
@@ -22,7 +21,7 @@ parafork_print_output_block "UNKNOWN" "$pwd" "PASS" "bash \"$SCRIPT_DIR/init.sh\
 
 cat <<EOF
 
-Parafork v13 — safe worktree contribution workflow
+Parafork — safe worktree contribution workflow
 
 Base-allowed scripts:
 - bash "$SCRIPT_DIR/init.sh" [--new|--reuse]   (entry; inside a worktree requires explicit choice)

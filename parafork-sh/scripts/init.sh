@@ -91,10 +91,9 @@ symbol_base_root=""
 
 if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
   parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
-  spec_version="$(parafork_symbol_get "$symbol_path" "PARAFORK_SPEC_VERSION" || true)"
-  if [[ "$parafork_worktree" != "1" || "$spec_version" != "13" ]]; then
+  if [[ "$parafork_worktree" != "1" ]]; then
     parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "bash \"$SCRIPT_DIR/debug.sh\""
-    parafork_die "found .worktree-symbol but not a parafork v13 worktree: $symbol_path"
+    parafork_die "found .worktree-symbol but not a parafork worktree: $symbol_path"
   fi
   in_worktree="true"
   symbol_worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || true)"
@@ -257,7 +256,6 @@ parafork_enable_worktree_logging "$WORKTREE_ROOT" "init.sh" "${original_args[@]}
 
 cat >"$SYMBOL_PATH" <<EOF
 PARAFORK_WORKTREE=1
-PARAFORK_SPEC_VERSION=13
 WORKTREE_ID=$WORKTREE_ID
 BASE_ROOT=$BASE_ROOT
 WORKTREE_ROOT=$WORKTREE_ROOT
