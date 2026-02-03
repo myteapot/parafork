@@ -1,3 +1,6 @@
+parafork是一个基于git worktree的并行多会话开发skill
+支持在windows/linux/wsl下使用
+
 how to install：
 复制parafork文件夹添加到skills文件夹即可
 
