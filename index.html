@@ -1244,9 +1244,9 @@
       aria-label="购物车"
     >
       <div class="absolute inset-0 bg-ink-900/25 backdrop-blur-sm" data-close-cart></div>
-      <div
-        class="absolute right-0 top-0 h-full w-[min(92vw,420px)] border-l border-ink-900/10 bg-white shadow-soft"
-      >
+       <div
+         class="absolute right-0 top-0 flex h-full w-[min(92vw,420px)] flex-col border-l border-ink-900/10 bg-white shadow-soft"
+       >
         <div class="flex items-center justify-between border-b border-ink-900/10 px-5 py-4">
           <div>
             <div class="font-display text-xl">购物车</div>
@@ -1260,20 +1260,20 @@
             关闭
           </button>
         </div>
-        <div class="h-[calc(100%-152px)] overflow-auto px-5 py-4" id="cartItems"></div>
-        <div class="border-t border-ink-900/10 px-5 py-4">
+        <div class="flex-1 overflow-auto px-5 py-4" id="cartItems"></div>
+        <div class="shrink-0 border-t border-ink-900/10 px-5 py-3">
           <div class="flex items-center justify-between text-sm">
             <div class="text-ink-900/70">合计</div>
             <div class="font-semibold" id="cartTotal">¥ 0</div>
           </div>
           <button
-            class="mt-3 w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+            class="mt-2 w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
             type="button"
             id="checkoutBtn"
           >
-            去结算（演示）
+            去结算
           </button>
-          <div class="mt-2 text-xs text-ink-900/60">这是静态演示页面：结算按钮只会弹出提示。</div>
+          <div class="mt-1 text-xs text-ink-900/60">这是静态演示页面：结算会创建一笔演示订单。</div>
         </div>
       </div>
     </div>
