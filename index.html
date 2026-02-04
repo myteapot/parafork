@@ -1627,7 +1627,8 @@
           });
 
           // Region cards act like toggles.
-          document.querySelectorAll("[data-region]").forEach((btn) => {
+          // NOTE: product cards also have data-region; scope this to the regions section.
+          document.querySelectorAll("#regions [data-region]").forEach((btn) => {
             btn.addEventListener("click", () => {
               const key = btn.getAttribute("data-region");
               setRegion(state.region === key ? null : key);
@@ -1644,7 +1645,8 @@
           });
 
           document.querySelectorAll("#productGrid [data-add]").forEach((btn) => {
-            btn.addEventListener("click", () => {
+            btn.addEventListener("click", (e) => {
+              e.stopPropagation();
               const id = btn.getAttribute("data-add");
               if (!id) return;
               state.cart[id] = (state.cart[id] || 0) + 1;
@@ -1660,7 +1662,8 @@
           });
 
           document.querySelectorAll("#productGrid [data-quick]").forEach((btn) => {
-            btn.addEventListener("click", () => {
+            btn.addEventListener("click", (e) => {
+              e.stopPropagation();
               document.getElementById("brew")?.scrollIntoView({ behavior: "smooth" });
             });
           });
