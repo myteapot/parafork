@@ -1,99 +1,44 @@
 ---
 name: parafork
-description: "脚本优先的 Git worktree 工作流：init/status/check/commit/pull/merge/debug。根据系统选择 `bash-scripts/` 或 `powershell-scripts/` 运行。包含严格的 worktree-root guard、WORKTREE_USED 顺序门闩、autoplan 默认关闭、审计日志、remote base 对齐，以及防止提交 paradoc/.worktree-symbol。"
+description: "脚本优先的 Git worktree 工作流（init/status/check/commit/pull/merge/debug）。安全默认：任何写操作（含 apply_patch）必须先 init 并仅在 WORKTREE_ROOT 内完成；base repo 默认只读（仅 help/init/debug）。系统相关命令见 references/route-*.md。"
 ---
 
 # Parafork
-- 本 skill 是脚本优先的，在有对应脚本时，不可以执行同语义的git操作，而需要优先执行脚本。如果脚本出现问题，需要申请人类显式同意再执行超出脚本范围的git操作
-- 
 
+## MUST
+- 激活：阅读/使用本 skill 即视为接受本文件约束。
+- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；除 `help/init/debug` 外，不在 base repo 运行任何脚本。
+- 写操作必须进 worktree：任何 WRITE/SIDE-EFFECT 动作前必须先运行 `init` 创建/复用 worktree，并进入 `WORKTREE_ROOT` 后再继续。
+  - 在 base repo：`init` 无参等价 `--new`（推荐显式 `--new`）。
+  - 在 worktree 内：`init` 无参会 FAIL，必须显式 `--reuse` 或 `--new`。
+- 脚本优先：存在对应脚本时，禁止用裸 `git` 做同语义操作；必须超出脚本能力时先申请人类显式同意（给出命令、风险、回退）。
+- 目录门闩：worktree-only 脚本只能在 `WORKTREE_ROOT` 运行；不确定位置先跑 `debug`。
+- 顺序门闩：worktree-only 脚本要求 `.worktree-symbol: WORKTREE_USED=1`；旧 worktree 需先 `init --reuse` 补写。
+- `.worktree-symbol` 只能当数据文件（KEY=VALUE，按第一个 `=` 切分）；禁止 `source`/`eval`/dot-source/`Invoke-Expression`。
+- 防污染：`.worktree-symbol` 与 `paradoc/` 默认不得进入 git history（exclude + staged 检查闭环）。
+- 审计：worktree-only 脚本输出必须追加到 `paradoc/Log.txt`（时间戳、argv、pwd、exit code）。
+- 冲突：遇到 merge/patch 冲突必须停下来交由人工处理；脚本不做自动 resolve。
+- 合并门闩：禁止自动 merge；只有 maintainer 在显式批准后才能运行 `merge.*` 合并回主分支。
 
-## 硬规范（SPEC）
-- 本skill是脚本优先的
+## RULES
+- 先判定请求类型（不确定按 WRITE 处理）：
+  - READ-ONLY：仅解释/审阅/搜索/对比；只读打开文件；运行不会写入仓库的命令。✅ 可不 `init`。
+  - WRITE/SIDE-EFFECT：改文件/新增/删除/`apply_patch`/任何会改动工作区或 `git` 状态的命令。✅ 必须走 worktree 流程。
+- WRITE 请求的顺序：
+  1) 先用 plan 工具写/更新可执行的计划（优先遵守人类给的 plan）。
+  2) 再按 ROUTE 打开对应系统的 `references/route-*.md`，检查并复制命令序列执行（不要凭记忆手敲）。
+- 任何需要“裸 git”且脚本无对应能力：先停下，向人类申请同意后再做。
 
+## SPECS
+- 两套实现（同语义）：
+  - Bash：`bash-scripts/*.sh`（Linux/macOS/WSL/Git-Bash）
+  - PowerShell：`powershell-scripts/*.ps1`（Windows PowerShell 5.1 / PowerShell 7）
+- merge 需要双门闩：环境变量/本地 git config 的批准 + CLI `--yes --i-am-maintainer`（细节见 `references/wiki.md`）。
+- `custom.autoplan` 默认 `false`（见 `settings/config.toml`）：只有 `custom.autoplan=true` 或 `check --strict` 时才会机械要求 `paradoc/Plan.md`。
 
-## 硬规则（MUST）
-
-- 在完成流程后必须显式申请人类同意才能merge回主仓库
-- 唯一入口是 `init`（`init.sh` 或 `init.ps1`）；在 worktree 内无参运行会 FAIL，必须显式 `--reuse` 或 `--new`。
-- worktree-only 脚本只能在 `WORKTREE_ROOT` 运行；不确定位置先跑 `debug`（`debug.sh` / `debug.ps1`）。
-- worktree-only 脚本要求 `.worktree-symbol: WORKTREE_USED=1`（顺序门闩）：旧 worktree 需先 `init --reuse` 补写。
-- `.worktree-symbol` 只当作数据文件（KEY=VALUE，按第一个 `=` 切分）；禁止 `source`/`eval`/dot-source/`Invoke-Expression`。
-- `.worktree-symbol` 与 `paradoc/` 默认不得进入 git history；脚本通过 exclude + staged 检查闭环防污染。
-- 审计日志：worktree-only 脚本全量输出追加到 `paradoc/Log.txt`（含时间戳、argv、pwd、exit code）；base-allowed 脚本在能定位 worktree 时也会记录。
-- 冲突必须停下来人工处理；脚本不做自动 resolve。
-
-## 脚本选择（System Based）
-- skill 提供同一套工作流语义的两份实现：
-- `bash-scripts/*.sh`：Linux/macOS/WSL/Git-Bash
-- `powershell-scripts/*.ps1`：Windows（Windows PowerShell 5.1 / PowerShell 7）
-
-- 本文档中：
-- `<PARAFORK_BASH_SCRIPTS>` 指本 skill 包的 `bash-scripts/` 目录
-- `<PARAFORK_POWERSHELL_SCRIPTS>` 指本 skill 包的 `powershell-scripts/` 目录
-
-- Windows（PowerShell 5.1 / 7）：使用 `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\<script>.ps1" ...`
-- Linux/macOS/WSL/Git-Bash：使用 `bash "<PARAFORK_BASH_SCRIPTS>/<script>.sh" ...`
-
-> 重要：两套实现都遵循同一套硬门闩与审计规则（见下文 MUST）。
-
-## 执行规范（Windows PowerShell）
-
-1) 运行唯一入口 `init.ps1`：
-   - 在 base repo：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\init.ps1"`（无参默认创建新 worktree）
-   - 在某个 worktree 内：无参会 FAIL，必须显式二选一：
-     - 继续当前 worktree：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\init.ps1" --reuse`
-     - 新开 worktree：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\init.ps1" --new`
-2) 按 init 输出 `cd "<WORKTREE_ROOT>"` 进入 worktree 根目录。
-3) 运行：
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\status.ps1"`
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\check.ps1" --phase exec`
-4) 每个 task 按微循环推进：
-   - 用模型 plan 工具规划/更新（优先遵守人类提供的 plan）
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\commit.ps1" --message "..."` 保存进度
-   - 更新 `paradoc/Exec.md`（What/Why/Verify）
-5) 合并前：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\check.ps1" --phase merge`
-6) 合并回主分支（仅 maintainer）：
-   - 一次性批准：`set PARAFORK_APPROVE_MERGE=1`（或本地 git config）
-   - 运行：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\merge.ps1" --yes --i-am-maintainer`
-
-## 执行规范（Bash）
-
-1) 运行唯一入口 `init.sh`：
-   - 在 base repo：`bash "<PARAFORK_BASH_SCRIPTS>/init.sh"`（无参默认创建新 worktree）
-   - 在某个 worktree 内：无参会 FAIL，必须显式二选一：
-     - 继续当前 worktree：`bash "<PARAFORK_BASH_SCRIPTS>/init.sh" --reuse`
-     - 新开 worktree：`bash "<PARAFORK_BASH_SCRIPTS>/init.sh" --new`
-2) 按 init 输出 `cd "<WORKTREE_ROOT>"` 进入 worktree 根目录。
-3) 运行：
-   - `bash "<PARAFORK_BASH_SCRIPTS>/status.sh"`
-   - `bash "<PARAFORK_BASH_SCRIPTS>/check.sh" --phase exec`
-4) 微循环推进：
-   - 用模型 plan 工具规划/更新（优先遵守人类提供的 plan）
-   - `bash "<PARAFORK_BASH_SCRIPTS>/commit.sh" --message "..."` 保存进度
-   - 更新 `paradoc/Exec.md`
-5) 合并前：`bash "<PARAFORK_BASH_SCRIPTS>/check.sh" --phase merge`
-6) 合并回主分支（仅 maintainer）：
-   - 一次性批准：`PARAFORK_APPROVE_MERGE=1 bash "<PARAFORK_BASH_SCRIPTS>/merge.sh" --yes --i-am-maintainer`
-
-## 脚本清单
-
-允许在 base repo 运行（base-allowed）：
-- `help.sh` / `help.ps1`
-- `init.sh` / `init.ps1`
-- `debug.sh` / `debug.ps1`
-
-只能在 worktree 根目录运行（worktree-only）：
-- `status.sh` / `status.ps1`
-- `check.sh` / `check.ps1`
-- `commit.sh` / `commit.ps1`
-- `pull.sh` / `pull.ps1`
-- `merge.sh` / `merge.ps1`
-- `diff.sh` / `diff.ps1`
-- `log.sh` / `log.ps1`
-- `review.sh` / `review.ps1`
-
-## 参考
-
-- 维护手册：`references/wiki.md`
-- Plan 写作指南（仅 `custom.autoplan=true` 或 strict 时适用）：`references/How-to-write-plan.md`
+## ROUTE
+- 设计/术语/硬约束 SSOT：`references/wiki.md`
+- 脚本清单与可运行范围：`references/scripts.md`
+- Plan 写作（仅 autoplan/strict 适用）：`references/plan.md`
+- Windows PowerShell 执行路线（规划后再打开）：`references/route-powershell.md`
+- Bash 执行路线（规划后再打开）：`references/route-bash.md`

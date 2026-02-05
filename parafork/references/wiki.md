@@ -77,7 +77,10 @@
   assets/
     Plan.md Exec.md Merge.md
   references/
-    How-to-write-plan.md
+    plan.md
+    scripts.md
+    route-bash.md
+    route-powershell.md
     wiki.md
   settings/
     config.toml
