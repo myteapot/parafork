@@ -347,23 +347,24 @@ function ParaforkGuardWorktreeRoot {
 
   $pwd = (Get-Location).Path
 
-  $debugPath = ParaforkScriptPath 'debug.ps1'
-  $initPath = ParaforkScriptPath 'init.ps1'
+  $entryPath = Join-Path (ParaforkScriptDir) 'parafork.ps1'
+  $debugNext = ParaforkPsFileCmd $entryPath @('debug')
+  $initNext = "cd <BASE_ROOT>; " + (ParaforkPsFileCmd $entryPath @('init', '--new'))
 
   $symbolPath = ParaforkSymbolFindUpwards $pwd
   if (-not $symbolPath) {
     $baseRoot = ParaforkGitToplevel
     if ($baseRoot) {
-      ParaforkPrintOutputBlock 'UNKNOWN' $pwd 'FAIL' (ParaforkPsFileCmd $debugPath @())
+      ParaforkPrintOutputBlock 'UNKNOWN' $pwd 'FAIL' $debugNext
       return $null
     }
-    ParaforkPrintOutputBlock 'UNKNOWN' $pwd 'FAIL' ("cd <BASE_ROOT>; " + (ParaforkPsFileCmd $initPath @()))
+    ParaforkPrintOutputBlock 'UNKNOWN' $pwd 'FAIL' $initNext
     return $null
   }
 
   $paraforkWorktree = ParaforkSymbolGet $symbolPath 'PARAFORK_WORKTREE'
   if ($paraforkWorktree -ne '1') {
-    ParaforkPrintOutputBlock 'UNKNOWN' $pwd 'FAIL' (ParaforkPsFileCmd $debugPath @())
+    ParaforkPrintOutputBlock 'UNKNOWN' $pwd 'FAIL' $debugNext
     return $null
   }
 
@@ -374,22 +375,23 @@ function ParaforkGuardWorktreeRoot {
 
   $worktreeRoot = ParaforkSymbolGet $symbolPath 'WORKTREE_ROOT'
   if ([string]::IsNullOrEmpty($worktreeRoot)) {
-    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' (ParaforkPsFileCmd $debugPath @())
+    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' $debugNext
     return $null
   }
 
   $worktreeUsed = ParaforkSymbolGet $symbolPath 'WORKTREE_USED'
   if ($worktreeUsed -ne '1') {
     Write-Output 'REFUSED: worktree not entered (WORKTREE_USED!=1)'
-    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' (ParaforkPsFileCmd $initPath @('--reuse'))
+    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' (ParaforkPsFileCmd $entryPath @('init', '--reuse'))
     return $null
   }
 
   $pwdNorm = ParaforkNormalizePath $pwd
   $rootNorm = ParaforkNormalizePath $worktreeRoot
   if ($pwdNorm -ne $rootNorm) {
-    $scriptPath = ParaforkScriptPath $ScriptBasename
-    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; " + (ParaforkPsFileCmd $scriptPath $Args)
+    $cmd = [System.IO.Path]::GetFileNameWithoutExtension($ScriptBasename)
+    $entryArgs = @($cmd) + $Args
+    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; " + (ParaforkPsFileCmd $entryPath $entryArgs)
     ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' $next
     return $null
   }

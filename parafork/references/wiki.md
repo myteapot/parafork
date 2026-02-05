@@ -41,8 +41,8 @@
   - CLI 二次门闩（`--yes --i-am-maintainer`）
 
 3) 目录强约束（Worktree-root guard）
-- 除 `help/init/debug` 外，所有脚本必须在 `WORKTREE_ROOT` 执行。
-- worktree-only 脚本还要求 `.worktree-symbol: WORKTREE_USED=1`（顺序门闩）。
+- 除 `help/init/debug/watch` 外，其余子命令必须在 parafork worktree 中执行（脚本会自动切到 `WORKTREE_ROOT`）。
+- worktree-required 子命令还要求 `.worktree-symbol: WORKTREE_USED=1`（顺序门闩）。
 
 4) 证据链完整但默认不污染仓库历史（No git pollution by default）
 - `.worktree-symbol` 与 `paradoc/` 默认不得进入 git history。
@@ -66,14 +66,10 @@
   SKILL.md
   bash-scripts/
     _lib.sh
-    help.sh init.sh debug.sh
-    status.sh check.sh commit.sh pull.sh merge.sh
-    diff.sh log.sh review.sh
+    parafork.sh
   powershell-scripts/
     _lib.ps1
-    help.ps1 init.ps1 debug.ps1
-    status.ps1 check.ps1 commit.ps1 pull.ps1 merge.ps1
-    diff.ps1 log.ps1 review.ps1
+    parafork.ps1
   assets/
     Plan.md Exec.md Merge.md
   references/
@@ -90,7 +86,7 @@
 
 ## 3. 目标仓库内“会出现”的内容（脚本运行后）
 
-`init`（`init.sh --new` 或 `init.ps1 --new`）会创建：
+`init`（`parafork init --new`；或直接运行默认 `watch` 让它自动 bootstrap）会创建：
 
 ```
 <BASE_ROOT>/.parafork/<WORKTREE_ID>/
@@ -121,7 +117,7 @@
 - `PARAFORK_WORKTREE=1`
 - `WORKTREE_ID` / `BASE_ROOT` / `WORKTREE_ROOT`
 - `WORKTREE_BRANCH` / `WORKTREE_START_POINT`
-- `WORKTREE_USED`（`0|1`；顺序门闩，worktree-only 脚本要求为 `1`）
+- `WORKTREE_USED`（`0|1`；顺序门闩，worktree-required 子命令要求为 `1`）
 - `BASE_BRANCH` / `REMOTE_NAME`
 - `BASE_BRANCH_SOURCE` / `REMOTE_NAME_SOURCE`（`config|cli|none`）
 - `CREATED_AT`（UTC）
@@ -172,73 +168,60 @@ NEXT=<copy/paste next step>
 
 Contributor 最短路径（典型）：
 
-1) 在 base repo 运行 `init`（唯一入口）：
+1) 运行默认固定流程（`watch`；无参等价）：
 
 Windows（PowerShell）：
-- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\init.ps1"`
-- 若已在某个 worktree 内：无参直接 FAIL，必须显式二选一：
-  - 继续当前：`... init.ps1 --reuse`
-  - 新开一个：`... init.ps1 --new`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1"`
 
 Bash（Linux/macOS/WSL/Git-Bash）：
-- `bash "<PARAFORK_BASH_SCRIPTS>/init.sh"`
-- 若已在某个 worktree 内：无参直接 FAIL，必须显式二选一：
-  - 继续当前：`... init.sh --reuse`
-  - 新开一个：`... init.sh --new`
+- `bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh"`
 
-2) `cd "<WORKTREE_ROOT>"` 进入 worktree 根目录
-3) 运行 `status` / `check --phase exec` 查看摘要与基础检查：
+> 可从 base repo / worktree 子目录 / worktree 根目录启动；会自动 `init --new` 或复用“最新 worktree”，并执行 `status` + `check --phase exec`。
+>
+> 需要只跑一次：加 `watch --once`；需要合并前材料与检查：用 `watch --phase merge --once`。
 
-Windows（PowerShell）：
-- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\status.ps1"`
-- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\check.ps1" --phase exec`
-
-Bash（Linux/macOS/WSL/Git-Bash）：
-- `bash "<PARAFORK_BASH_SCRIPTS>/status.sh"`
-- `bash "<PARAFORK_BASH_SCRIPTS>/check.sh" --phase exec`
-
-4) 按 task 微循环推进：
-   - 用模型 plan 工具规划/更新（优先遵守人类提供的 plan）
+2) 按 task 微循环推进（`watch` 不会自动 commit）：
    - 更新 `paradoc/Exec.md`（What/Why/Verify）
    - 运行 `commit --message "..."` 保存进度：
-     - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\commit.ps1" --message "..."`
-     - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/commit.sh" --message "..."`
+     - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" commit --message "..."`
+     - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" commit --message "..."`
    - 仅当 `custom.autoplan=true` 时维护 `paradoc/Plan.md`（会被 `check` 纳入检查）
 
-5) 合并前：
+3) 合并前：
 - 写 `paradoc/Merge.md`（必须包含验收/复现步骤关键字：Acceptance / Repro）
-- 运行 merge 阶段检查：
-  - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\check.ps1" --phase merge`
-  - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/check.sh" --phase merge`
+- 推荐：先跑 `watch --phase merge --once` 生成材料 + 检查，并按 `NEXT` 执行：
+  - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" watch --phase merge --once`
+  - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" watch --phase merge --once`
 
-6) 合并回 base（仅 maintainer；需要本地批准 + CLI 门闩）：
+4) 合并回 base（仅 maintainer；需要本地批准 + CLI 门闩）：
 
 Windows（PowerShell）：
-- 一次性 env 批准：`set PARAFORK_APPROVE_MERGE=1`
-- 合并：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\merge.ps1" --yes --i-am-maintainer`
+- 一次性 env 批准：`$env:PARAFORK_APPROVE_MERGE=1`
+- 合并：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" merge --yes --i-am-maintainer`
 
 Bash（Linux/macOS/WSL/Git-Bash）：
-- 合并：`PARAFORK_APPROVE_MERGE=1 bash "<PARAFORK_BASH_SCRIPTS>/merge.sh" --yes --i-am-maintainer`
+- 合并：`PARAFORK_APPROVE_MERGE=1 bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" merge --yes --i-am-maintainer`
 
 不确定自己在哪个 worktree：
-- PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\debug.ps1"`
-- Bash：`bash "<PARAFORK_BASH_SCRIPTS>/debug.sh"`
+- PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" debug`
+- Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" debug`
 
 ---
 
-## 8. 脚本清单与分类
+## 8. 子命令清单与分类
 
-允许在 base repo 运行（base-allowed）：
-- `help.sh` / `help.ps1`
-- `init.sh` / `init.ps1`
-- `debug.sh` / `debug.ps1`
+允许在 base repo / 任意目录运行（base-allowed）：
+- `parafork help`
+- `parafork debug`
+- `parafork init ...`
+- `parafork watch ...`（默认命令；无参等价）
 
-只能在 worktree 根目录运行（worktree-only）：
-- `status.sh` / `status.ps1`
-- `check.sh` / `check.ps1`
-- `commit.sh` / `commit.ps1`
-- `pull.sh` / `pull.ps1`
-- `merge.sh` / `merge.ps1`
-- `diff.sh` / `diff.ps1`
-- `log.sh` / `log.ps1`
-- `review.sh` / `review.ps1`
+必须在 parafork worktree 中运行（worktree-required；脚本会自动切到 `WORKTREE_ROOT`）：
+- `parafork status`
+- `parafork check --phase plan|exec|merge [--strict]`
+- `parafork commit --message "<msg>" [--no-check]`
+- `parafork pull [--strategy ff-only|rebase|merge] ...`
+- `parafork diff`
+- `parafork log [--limit <n>]`
+- `parafork review`
+- `parafork merge ...`（仅 maintainer；需双门闩）

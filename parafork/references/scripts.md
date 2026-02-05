@@ -1,23 +1,24 @@
 # Scripts（索引）
 
-两套实现语义一致，只是入口不同：
+两套实现语义一致（Bash / PowerShell），但对外 **只有一个入口脚本**：
 
-- Bash：`bash-scripts/*.sh`
-- PowerShell：`powershell-scripts/*.ps1`
+- Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" [cmd] [args...]`
+- PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" <cmd> [args...]`
 
-> 命令模板与执行顺序请看：`references/route-bash.md` / `references/route-powershell.md`
+> 命令模板与执行顺序（渐进式披露）见：`references/route-bash.md` / `references/route-powershell.md`
 
-## base-allowed（可在 base repo 运行）
-- `help.sh` / `help.ps1`
-- `init.sh` / `init.ps1`（唯一入口 / bootstrap）
-- `debug.sh` / `debug.ps1`
+## base-allowed（可在 base repo / 任意目录运行）
+- `parafork help`
+- `parafork debug`
+- `parafork init [--new|--reuse] ...`
+- `parafork watch ...`（默认命令；无参等价 `watch`）
 
-## worktree-only（只能在 WORKTREE_ROOT 运行）
-- `status.sh` / `status.ps1`
-- `check.sh` / `check.ps1`（`--phase exec|merge`；可选 `--strict`）
-- `commit.sh` / `commit.ps1`
-- `pull.sh` / `pull.ps1`
-- `diff.sh` / `diff.ps1`
-- `log.sh` / `log.ps1`
-- `review.sh` / `review.ps1`
-- `merge.sh` / `merge.ps1`（仅 maintainer；需双门闩）
+## worktree-required（必须在 parafork worktree 中；脚本会自动切到 WORKTREE_ROOT）
+- `parafork status`
+- `parafork check --phase plan|exec|merge [--strict]`
+- `parafork commit --message "<msg>" [--no-check]`
+- `parafork pull [--strategy ff-only|rebase|merge] ...`
+- `parafork diff`
+- `parafork log [--limit <n>]`
+- `parafork review`
+- `parafork merge ...`（仅 maintainer；需双门闩）

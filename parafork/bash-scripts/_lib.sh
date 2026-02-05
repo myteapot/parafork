@@ -14,6 +14,8 @@ parafork_warn() {
   echo "WARN: $*" >&2
 }
 
+PARAFORK_OUTPUT_BLOCK_PRINTED="0"
+
 parafork_script_dir() {
   cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P
 }
@@ -29,6 +31,18 @@ parafork_script_path() {
   local script_dir
   script_dir="$(parafork_script_dir)"
   echo "$script_dir/$script_name"
+}
+
+parafork_entry_path() {
+  local script_dir
+  script_dir="$(parafork_script_dir)"
+  echo "$script_dir/parafork.sh"
+}
+
+parafork_entry_cmd() {
+  local p
+  p="$(parafork_entry_path)"
+  printf 'bash "%s"' "$p"
 }
 
 parafork_config_path_from_base() {
@@ -49,6 +63,7 @@ parafork_print_output_block() {
   local status="$3"
   local next="$4"
 
+  PARAFORK_OUTPUT_BLOCK_PRINTED="1"
   parafork_print_kv WORKTREE_ID "$worktree_id"
   parafork_print_kv PWD "$pwd"
   parafork_print_kv STATUS "$status"
@@ -239,16 +254,47 @@ parafork_symbol_set() {
   rm -f "$tmp"
 }
 
-parafork_guard_worktree_root() {
-  local script_basename="$1"
-  shift || true
+parafork_worktree_container() {
+  local base_root="$1"
+  local config_path workdir_root
+  config_path="$(parafork_config_path_from_base "$base_root")"
+  workdir_root=".parafork"
+  if [[ -f "$config_path" ]]; then
+    workdir_root="$(parafork_toml_get_str "$config_path" "workdir" "root" ".parafork")"
+  fi
+  echo "$base_root/$workdir_root"
+}
 
+parafork_list_worktrees_newest_first() {
+  local base_root="$1"
+  local container
+  container="$(parafork_worktree_container "$base_root")"
+
+  [[ -d "$container" ]] || return 0
+
+  local d
+  while IFS= read -r d; do
+    [[ -d "$d" ]] || continue
+    [[ -f "$d/.worktree-symbol" ]] || continue
+    printf '%s\n' "$d"
+  done < <(ls -1dt "$container"/* 2>/dev/null || true)
+}
+
+parafork_guard_worktree() {
   local pwd
   pwd="$(pwd -P)"
 
-  local debug_path init_path
-  debug_path="$(parafork_script_path "debug.sh")"
-  init_path="$(parafork_script_path "init.sh")"
+  PARAFORK_WORKTREE_ID=""
+  PARAFORK_WORKTREE_ROOT=""
+  PARAFORK_BASE_ROOT=""
+  PARAFORK_SYMBOL_PATH=""
+
+  local entry_cmd
+  entry_cmd="$(parafork_entry_cmd)"
+
+  local debug_next init_next
+  debug_next="$entry_cmd debug"
+  init_next="cd <BASE_ROOT> && $entry_cmd init --new"
 
   local symbol_path=""
   if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
@@ -256,17 +302,17 @@ parafork_guard_worktree_root() {
   else
     local base_root=""
     if base_root="$(parafork_git_toplevel)"; then
-      parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "bash \"$debug_path\""
+      parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "$debug_next"
       return 1
     fi
-    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "cd <BASE_ROOT> && bash \"$init_path\""
+    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "$init_next"
     return 1
   fi
 
   local parafork_worktree=""
   parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
   if [[ "$parafork_worktree" != "1" ]]; then
-    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "bash \"$debug_path\""
+    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "$debug_next"
     return 1
   fi
 
@@ -278,7 +324,7 @@ parafork_guard_worktree_root() {
   worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || true)"
 
   if [[ -z "$worktree_root" ]]; then
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "bash \"$debug_path\""
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$debug_next"
     return 1
   fi
 
@@ -286,24 +332,29 @@ parafork_guard_worktree_root() {
   worktree_used="$(parafork_symbol_get "$symbol_path" "WORKTREE_USED" || true)"
   if [[ "$worktree_used" != "1" ]]; then
     echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "bash \"$init_path\" --reuse"
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$entry_cmd init --reuse"
     return 1
   fi
 
-  if [[ "$pwd" != "$worktree_root" ]]; then
-    local script_path
-    script_path="$(parafork_script_path "$script_basename")"
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "cd \"$worktree_root\" && bash \"$script_path\""
-    return 1
-  fi
+  PARAFORK_WORKTREE_ID="$worktree_id"
+  PARAFORK_WORKTREE_ROOT="$worktree_root"
+  PARAFORK_BASE_ROOT="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
+  PARAFORK_SYMBOL_PATH="$symbol_path"
 
   return 0
 }
 
-parafork_enable_worktree_logging() {
+parafork_invoke_logged() {
   local worktree_root="$1"
   shift
   local script_name="$1"
+  shift
+  local argv_line="$1"
+  shift
+
+  if [[ "${1:-}" != "--" ]]; then
+    parafork_die "internal: parafork_invoke_logged expects -- separator"
+  fi
   shift
 
   local log_file="$worktree_root/paradoc/Log.txt"
@@ -314,13 +365,20 @@ parafork_enable_worktree_logging() {
   ts="$(parafork_now_utc)"
   {
     echo "===== $ts $script_name ====="
-    echo "cmd: $script_name $*"
+    echo "cmd: $argv_line"
     echo "pwd: $(pwd -P)"
   } >>"$log_file"
 
-  trap 'code=$?; { echo "exit: $code"; echo; } >>"'"$log_file"'"' EXIT
+  set +e
+  (
+    set -euo pipefail
+    "$@"
+  ) 2>&1 | tee -a "$log_file"
+  local code="${PIPESTATUS[0]}"
+  set -e
 
-  exec > >(tee -a "$log_file") 2>&1
+  { echo "exit: $code"; echo; } >>"$log_file"
+  return "$code"
 }
 
 parafork_require_yes_i_am_maintainer_for_flag() {

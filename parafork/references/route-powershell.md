@@ -7,44 +7,43 @@
 - `<PARAFORK_ROOT>`：本 skill 根目录
 - `<PARAFORK_POWERSHELL_SCRIPTS>`：`<PARAFORK_ROOT>/powershell-scripts`
 
-通用命令模板：
+通用命令模板（唯一入口）：
 
-`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\<script>.ps1" ...`
+`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" <cmd> [args...]`
+
+> 无参等价：`watch`（默认固定流程）
 
 ## 0) 定位（可选）
 
-- 不确定当前目录/是否在 worktree：运行 `debug.ps1`（base-allowed）。
+- 不确定当前目录/是否在 worktree：运行 `parafork debug`（base-allowed）。
 
-## 1) Bootstrap（只在 base repo 或目标 worktree 内）
+## 1) 默认固定流程（推荐）
 
-- 新建 worktree（在 base repo；无参等价 `--new`）：`init.ps1 --new`
-- 复用当前 worktree（必须在该 worktree 内）：`init.ps1 --reuse`
+- 直接运行（默认 `watch`）：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1"`
+  - 可从 base repo / worktree 子目录 / worktree 根目录启动
+  - 会自动 `init --new` 或复用“最新 worktree”，并执行 `status` + `check --phase exec`
+- 只跑一次不进入循环：`... watch --once`
+- 合并前材料与检查：`... watch --phase merge --once`
 
-按 `init` 输出执行：
+> `watch` 不会自动 `commit/pull/merge`；只在安全时输出一次 `NEXT`（可复制执行）。
 
-`cd "<WORKTREE_ROOT>"`
+## 2) 手动子命令（高级）
 
-## 2) Exec（必须在 WORKTREE_ROOT）
+- 新建 worktree：`... init --new`
+- 复用当前 worktree（补写 `WORKTREE_USED=1`）：`... init --reuse`
 
-- `status.ps1`
-- `check.ps1 --phase exec`
+在 worktree 内（任意子目录均可；脚本会切到 `WORKTREE_ROOT`）：
+- `... status`
+- `... check --phase exec`
 
-每个 task 微循环：
-
+每个 task 微循环（不自动 commit）：
 - 更新计划 / `paradoc/Exec.md`
-- `commit.ps1 --message "..."`
+- `... commit --message "..."`
 
-需要时：
-
-- `pull.ps1`
-- `diff.ps1` / `log.ps1` / `review.ps1`
+需要时：`... pull` / `... diff` / `... log` / `... review`
 
 ## 3) Merge（仅 maintainer）
 
-- `check.ps1 --phase merge`
-- 批准门闩（任选其一）：
-  - PowerShell：`$env:PARAFORK_APPROVE_MERGE=1`
-  - CMD：`set PARAFORK_APPROVE_MERGE=1`
-  - 或本地 git config（脚本支持的方式）
-- `merge.ps1 --yes --i-am-maintainer`
-
+- 推荐：先跑 `... watch --phase merge --once`，按 `NEXT` 执行 merge
+- 批准门闩（任选其一）：`$env:PARAFORK_APPROVE_MERGE=1` 或 base repo 本地 git config
+- 合并：`$env:PARAFORK_APPROVE_MERGE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`
