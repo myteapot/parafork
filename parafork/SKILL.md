@@ -1,6 +1,6 @@
 ---
 name: parafork
-description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；含 init/status/check/commit/pull/merge/debug 子命令）。安全默认：任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
+description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；顶层命令收敛为 help/debug/init/watch/check/do/merge；旧命令 status/commit/pull/diff/log/review 仅弃用兼容）。安全默认：任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
 ---
 
 # Parafork

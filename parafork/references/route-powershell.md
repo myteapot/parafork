@@ -21,11 +21,11 @@
 
 - 直接运行（默认 `watch`）：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1"`
   - 可从 base repo / worktree 子目录 / worktree 根目录启动
-  - 会自动 `init --new` 或复用“最新 worktree”，并执行 `status` + `check --phase exec`
+  - 会自动 `init --new` 或复用“最新 worktree”，并执行 `check exec`（摘要 + 校验）
 - 只跑一次不进入循环：`... watch --once`
 - 合并前材料与检查：`... watch --phase merge --once`
 
-> `watch` 不会自动 `commit/pull/merge`；只在安全时输出一次 `NEXT`（可复制执行）。
+> `watch` 不会自动 `do commit/do pull/merge`；只在安全时输出一次 `NEXT`（可复制执行）。
 
 ## 2) 手动子命令（高级）
 
@@ -33,14 +33,14 @@
 - 复用当前 worktree（补写 `WORKTREE_USED=1`）：`... init --reuse`
 
 在 worktree 内（任意子目录均可；脚本会切到 `WORKTREE_ROOT`）：
-- `... status`
-- `... check --phase exec`
+- `... check status`
+- `... check exec`
 
 每个 task 微循环（不自动 commit）：
 - 更新计划 / `paradoc/Exec.md`
-- `... commit --message "..."`
+- `... do commit --message "..."`
 
-需要时：`... pull` / `... diff` / `... log` / `... review`
+需要时：`... do pull` / `... check diff` / `... check log` / `... check review`
 
 ## 3) Merge（仅 maintainer）
 

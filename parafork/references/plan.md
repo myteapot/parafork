@@ -47,7 +47,7 @@ Plan 必须包含两个标题（严格字符串）：
 
 完成一个 task（或达到可提交的最小增量）就做一次：
 1) 更新 Plan（勾选/状态）
-2) 运行提交命令保存进度：`parafork commit --message "..."`
+2) 运行提交命令保存进度：`parafork do commit --message "..."`
 3) 更新 `paradoc/Exec.md`（What/Why/Verify）
 
 ## 5) 常见坑

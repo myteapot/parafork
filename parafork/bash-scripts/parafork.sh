@@ -30,20 +30,34 @@ Commands:
   debug
   init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
   watch [--once] [--interval <sec>] [--phase exec|merge] [--new]
+  check [topic] [args...]
+  do <action> [args...]
+  merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
+check topics:
+  exec [--strict]    (default)
+  merge [--strict]
+  plan [--strict]
   status
-  check --phase plan|exec|merge [--strict]
-  commit --message "<msg>" [--no-check]
-  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
   diff
   log [--limit <n>]
   review
-  merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
+
+do actions:
+  commit --message "<msg>" [--no-check]
+  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
+
+Compatibility (deprecated but supported):
+  status, check --phase <phase>, commit, pull, diff, log, review
 
 Notes:
   - Default (no cmd): watch
   - watch does not auto-commit/merge; it only prints NEXT when safe.
 EOF
+}
+
+parafork_deprecated() {
+  echo "DEPRECATED: $1 -> $2" >&2
 }
 
 cmd_help() {
@@ -260,7 +274,7 @@ EOF
     init_reuse_body() {
       echo "MODE=reuse"
       parafork_print_kv WORKTREE_USED "1"
-      parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD status"
+      parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD check exec"
     }
 
     parafork_invoke_logged "$worktree_root" "parafork init" "$ENTRY_CMD init --reuse" -- init_reuse_body
@@ -439,7 +453,7 @@ EOF
   parafork_print_kv WORKTREE_START_POINT "$worktree_start_point"
   parafork_print_kv START_COMMIT "$start_commit"
   parafork_print_kv BASE_COMMIT "$base_commit"
-  parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD status"
+  parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD check exec"
 }
 
 do_status() {
@@ -470,22 +484,25 @@ do_status() {
   parafork_print_kv WORKTREE_BRANCH "$worktree_branch"
 
   if [[ "$print_block" == "true" ]]; then
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check --phase exec"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check exec"
   fi
 }
 
-cmd_status() {
+cmd_check_status() {
+  if [[ $# -gt 0 ]]; then
+    parafork_die "unknown arg: $1"
+  fi
+
   if ! parafork_guard_worktree; then
     exit 1
   fi
   cd "$PARAFORK_WORKTREE_ROOT"
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork status" "$ENTRY_CMD status" -- do_status "true"
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check status" "$ENTRY_CMD check status" -- do_status "true"
 }
 
 do_check() {
   local phase="$1"
   local strict="$2" # true|false
-  local mode="$3"   # cli|watch
 
   local pwd
   pwd="$(pwd -P)"
@@ -576,16 +593,10 @@ do_check() {
     for e in "${errors[@]}"; do
       echo "FAIL: $e"
     done
-    if [[ "$mode" == "cli" ]]; then
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues and rerun: $ENTRY_CMD check --phase $phase"
-    fi
     return 1
   fi
 
-  if [[ "$mode" == "cli" ]]; then
-    echo "CHECK_RESULT=PASS"
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD status"
-  fi
+  echo "CHECK_RESULT=PASS"
   return 0
 }
 
@@ -613,49 +624,194 @@ do_review() {
   echo "- Mention risks and rollback plan if relevant."
 
   if [[ "$print_block" == "true" ]]; then
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "edit paradoc/Merge.md then $ENTRY_CMD check --phase merge"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "edit paradoc/Merge.md then $ENTRY_CMD check merge"
   fi
 }
 
-cmd_check() {
-  local phase="merge"
-  local strict="false"
+cmd_check_exec() {
+  local strict="$1" # true|false
+  shift || true
 
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --phase)
-        phase="${2:-}"
-        shift 2
-        ;;
-      --strict)
-        strict="true"
-        shift
-        ;;
-      -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD check [--phase plan|exec|merge] [--strict]
-EOF
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
-    esac
-  done
-
-  case "$phase" in
-    plan|exec|merge) ;;
-    *) parafork_die "invalid --phase: $phase" ;;
-  esac
+  if [[ $# -gt 0 ]]; then
+    parafork_die "unknown arg: $1"
+  fi
 
   if ! parafork_guard_worktree; then
     exit 1
   fi
   cd "$PARAFORK_WORKTREE_ROOT"
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check" "$ENTRY_CMD check --phase $phase" -- do_check "$phase" "$strict" "cli"
+
+  local argv_line="$ENTRY_CMD check exec"
+  if [[ "$strict" == "true" ]]; then
+    argv_line="$argv_line --strict"
+  fi
+
+  check_exec_body() {
+    local pwd worktree_id
+    pwd="$(pwd -P)"
+    worktree_id="${PARAFORK_WORKTREE_ID:-UNKNOWN}"
+
+    do_status "false"
+    if ! do_check "exec" "$strict" "cli"; then
+      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues and rerun: $ENTRY_CMD check exec"
+      return 1
+    fi
+
+    local changes
+    changes="$(git status --porcelain | wc -l | tr -d ' ')"
+    if [[ "$changes" != "0" ]]; then
+      parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD do commit --message \"<msg>\""
+    else
+      parafork_print_output_block "$worktree_id" "$pwd" "PASS" "edit files (watch will re-check on change)"
+    fi
+  }
+
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check exec" "$argv_line" -- check_exec_body
 }
 
-cmd_commit() {
+cmd_check_merge() {
+  local strict="$1" # true|false
+  shift || true
+
+  if [[ $# -gt 0 ]]; then
+    parafork_die "unknown arg: $1"
+  fi
+
+  if ! parafork_guard_worktree; then
+    exit 1
+  fi
+  cd "$PARAFORK_WORKTREE_ROOT"
+
+  local argv_line="$ENTRY_CMD check merge"
+  if [[ "$strict" == "true" ]]; then
+    argv_line="$argv_line --strict"
+  fi
+
+  check_merge_body() {
+    local pwd worktree_id
+    pwd="$(pwd -P)"
+    worktree_id="${PARAFORK_WORKTREE_ID:-UNKNOWN}"
+
+    do_status "false"
+    do_review "false"
+    if ! do_check "merge" "$strict" "cli"; then
+      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"
+      return 1
+    fi
+
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "PARAFORK_APPROVE_MERGE=1 $ENTRY_CMD merge --yes --i-am-maintainer"
+  }
+
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check merge" "$argv_line" -- check_merge_body
+}
+
+cmd_check_plan() {
+  local strict="$1" # true|false
+  shift || true
+
+  if [[ $# -gt 0 ]]; then
+    parafork_die "unknown arg: $1"
+  fi
+
+  if ! parafork_guard_worktree; then
+    exit 1
+  fi
+  cd "$PARAFORK_WORKTREE_ROOT"
+
+  local argv_line="$ENTRY_CMD check plan"
+  if [[ "$strict" == "true" ]]; then
+    argv_line="$argv_line --strict"
+  fi
+
+  check_plan_body() {
+    local pwd worktree_id
+    pwd="$(pwd -P)"
+    worktree_id="${PARAFORK_WORKTREE_ID:-UNKNOWN}"
+
+    if ! do_check "plan" "$strict" "cli"; then
+      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues and rerun: $ENTRY_CMD check plan"
+      return 1
+    fi
+
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check exec"
+  }
+
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check plan" "$argv_line" -- check_plan_body
+}
+
+cmd_check() {
+  local strict="false"
+  local topic="exec"
+  local phase=""
+  local seen_topic="false"
+  local -a rest=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --strict)
+        strict="true"
+        shift
+        ;;
+      --phase)
+        phase="${2:-}"
+        [[ -n "$phase" ]] || parafork_die "missing value for --phase"
+        shift 2
+        ;;
+      -h|--help)
+        cat <<EOF
+Usage: $ENTRY_CMD check [topic] [args...]
+
+Topics:
+  exec [--strict]    (default)
+  merge [--strict]
+  plan [--strict]
+  status
+  diff
+  log [--limit <n>]
+  review
+
+Legacy (deprecated):
+  check --phase plan|exec|merge [--strict]
+EOF
+        exit 0
+        ;;
+      *)
+        if [[ "$seen_topic" == "false" ]]; then
+          topic="$1"
+          seen_topic="true"
+        else
+          rest+=("$1")
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -n "$phase" ]]; then
+    if [[ "$seen_topic" == "true" ]]; then
+      parafork_die "cannot combine positional topic and --phase"
+    fi
+    case "$phase" in
+      plan|exec|merge) ;;
+      *) parafork_die "invalid --phase: $phase" ;;
+    esac
+    parafork_deprecated "check --phase $phase" "check $phase"
+    topic="$phase"
+  fi
+
+  case "$topic" in
+    exec) cmd_check_exec "$strict" "${rest[@]}" ;;
+    merge) cmd_check_merge "$strict" "${rest[@]}" ;;
+    plan) cmd_check_plan "$strict" "${rest[@]}" ;;
+    status) cmd_check_status "${rest[@]}" ;;
+    diff) cmd_check_diff "${rest[@]}" ;;
+    log) cmd_check_log "${rest[@]}" ;;
+    review) cmd_check_review "${rest[@]}" ;;
+    *) parafork_die "unknown topic: $topic" ;;
+  esac
+}
+
+cmd_do_commit() {
   local message=""
   local no_check="false"
 
@@ -671,7 +827,7 @@ cmd_commit() {
         ;;
       -h|--help)
         cat <<EOF
-Usage: $ENTRY_CMD commit --message "<msg>" [--no-check]
+Usage: $ENTRY_CMD do commit --message "<msg>" [--no-check]
 EOF
         exit 0
         ;;
@@ -694,7 +850,11 @@ EOF
 
   commit_body() {
     if [[ "$no_check" != "true" ]]; then
-      do_check "exec" "false" "cli"
+      if ! do_check "exec" "false" "cli"; then
+        echo "REFUSED: check failed"
+        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then retry: $ENTRY_CMD do commit --message \"...\""
+        return 1
+      fi
     fi
 
     git add -A -- .
@@ -702,13 +862,13 @@ EOF
     if git diff --cached --name-only -- | grep -E '^(paradoc/|\.worktree-symbol$)' >/dev/null; then
       echo "REFUSED: git pollution staged"
       echo "HINT: ensure worktree exclude contains '/paradoc/' and '/.worktree-symbol'"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "unstage pollution and retry: git reset -q && $ENTRY_CMD commit --message \"...\""
+      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "unstage pollution and retry: git reset -q && $ENTRY_CMD do commit --message \"...\""
       return 1
     fi
 
     if git diff --cached --quiet --; then
       echo "REFUSED: nothing staged"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "edit files then retry: $ENTRY_CMD commit --message \"...\""
+      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "edit files then retry: $ENTRY_CMD do commit --message \"...\""
       return 1
     fi
 
@@ -716,13 +876,13 @@ EOF
     local head
     head="$(git rev-parse --short HEAD)"
     parafork_print_kv COMMIT "$head"
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD status"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check exec"
   }
 
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork commit" "$ENTRY_CMD commit --message \"...\"" -- commit_body
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do commit" "$ENTRY_CMD do commit --message \"...\"" -- commit_body
 }
 
-cmd_pull() {
+cmd_do_pull() {
   local strategy="ff-only"
   local no_fetch="false"
   local allow_drift="false"
@@ -753,7 +913,7 @@ cmd_pull() {
         ;;
       -h|--help)
         cat <<EOF
-Usage: $ENTRY_CMD pull [options]
+Usage: $ENTRY_CMD do pull [options]
 
 Default: ff-only (refuse if not fast-forward)
 
@@ -858,13 +1018,68 @@ EOF
       fi
     fi
 
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD status"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check exec"
   }
 
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork pull" "$ENTRY_CMD pull --strategy $strategy" -- pull_body
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do pull" "$ENTRY_CMD do pull --strategy $strategy" -- pull_body
+}
+
+cmd_do() {
+  local action="${1:-}"
+  if [[ -z "$action" || "$action" == "-h" || "$action" == "--help" ]]; then
+    cat <<EOF
+Usage: $ENTRY_CMD do <action> [args...]
+
+Actions:
+  commit --message "<msg>" [--no-check]
+  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
+EOF
+    exit 0
+  fi
+
+  shift || true
+  case "$action" in
+    commit) cmd_do_commit "$@" ;;
+    pull) cmd_do_pull "$@" ;;
+    *) parafork_die "unknown action: $action" ;;
+  esac
+}
+
+cmd_status() {
+  parafork_deprecated "status" "check status"
+  cmd_check status "$@"
 }
 
 cmd_diff() {
+  parafork_deprecated "diff" "check diff"
+  cmd_check diff "$@"
+}
+
+cmd_log() {
+  parafork_deprecated "log" "check log"
+  cmd_check log "$@"
+}
+
+cmd_review() {
+  parafork_deprecated "review" "check review"
+  cmd_check review "$@"
+}
+
+cmd_commit() {
+  parafork_deprecated "commit" "do commit"
+  cmd_do commit "$@"
+}
+
+cmd_pull() {
+  parafork_deprecated "pull" "do pull"
+  cmd_do pull "$@"
+}
+
+cmd_check_diff() {
+  if [[ $# -gt 0 ]]; then
+    parafork_die "unknown arg: $1"
+  fi
+
   if ! parafork_guard_worktree; then
     exit 1
   fi
@@ -882,17 +1097,36 @@ cmd_diff() {
     echo
     git diff "$base_branch...HEAD" || true
 
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD status"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check exec"
   }
 
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork diff" "$ENTRY_CMD diff" -- diff_body
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check diff" "$ENTRY_CMD check diff" -- diff_body
 }
 
-cmd_log() {
+cmd_check_log() {
   local limit="20"
-  if [[ "${1:-}" == "--limit" ]]; then
-    limit="${2:-20}"
-    shift 2 || true
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit)
+        limit="${2:-}"
+        [[ -n "$limit" ]] || parafork_die "missing value for --limit"
+        shift 2
+        ;;
+      -h|--help)
+        cat <<EOF
+Usage: $ENTRY_CMD check log [--limit <n>]
+EOF
+        exit 0
+        ;;
+      *)
+        parafork_die "unknown arg: $1"
+        ;;
+    esac
+  done
+
+  if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+    parafork_die "invalid --limit: $limit"
   fi
 
   if ! parafork_guard_worktree; then
@@ -907,19 +1141,23 @@ cmd_log() {
     worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
 
     git log --oneline --decorate -n "$limit"
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD status"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD check exec"
   }
 
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork log" "$ENTRY_CMD log --limit $limit" -- log_body
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check log" "$ENTRY_CMD check log --limit $limit" -- log_body
 }
 
-cmd_review() {
+cmd_check_review() {
+  if [[ $# -gt 0 ]]; then
+    parafork_die "unknown arg: $1"
+  fi
+
   if ! parafork_guard_worktree; then
     exit 1
   fi
   cd "$PARAFORK_WORKTREE_ROOT"
 
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork review" "$ENTRY_CMD review" -- do_review "true"
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check review" "$ENTRY_CMD check review" -- do_review "true"
 }
 
 cmd_merge() {
@@ -1227,7 +1465,7 @@ EOF
 
   do_status "false"
   if ! do_check "exec" "false" "watch"; then
-    parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues and rerun: $ENTRY_CMD check --phase exec"
+    parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues and rerun: $ENTRY_CMD check exec"
     exit 1
   fi
 
@@ -1235,7 +1473,7 @@ EOF
     local changes
     changes="$(git status --porcelain | wc -l | tr -d ' ')"
     if [[ "$changes" != "0" ]]; then
-      parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "$ENTRY_CMD commit --message \"<msg>\""
+      parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "$ENTRY_CMD do commit --message \"<msg>\""
     else
       parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "edit files (watch will re-check on change)"
     fi
@@ -1261,7 +1499,7 @@ EOF
     last_porcelain="$porcelain"
 
     if ! do_check "exec" "false" "watch"; then
-      parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues and rerun: $ENTRY_CMD check --phase exec"
+      parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues and rerun: $ENTRY_CMD check exec"
       exit 1
     fi
 
@@ -1270,7 +1508,7 @@ EOF
     local changes
     changes="$(git status --porcelain | wc -l | tr -d ' ')"
     if [[ "$changes" != "0" ]]; then
-      parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "$ENTRY_CMD commit --message \"<msg>\""
+      parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "$ENTRY_CMD do commit --message \"<msg>\""
     else
       parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "edit files (watch will re-check on change)"
     fi
@@ -1290,6 +1528,7 @@ case "$cmd" in
   watch) cmd_watch "$@" ;;
   status) cmd_status "$@" ;;
   check) cmd_check "$@" ;;
+  do) cmd_do "$@" ;;
   commit) cmd_commit "$@" ;;
   pull) cmd_pull "$@" ;;
   diff) cmd_diff "$@" ;;

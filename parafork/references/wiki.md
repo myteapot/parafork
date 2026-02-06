@@ -46,7 +46,7 @@
 
 4) 证据链完整但默认不污染仓库历史（No git pollution by default）
 - `.worktree-symbol` 与 `paradoc/` 默认不得进入 git history。
-- `commit/check` 必须在 staged/tracked 层面做闭环防污染。
+- `do commit/check` 必须在 staged/tracked 层面做闭环防污染。
 
 5) 可审计（Auditable）
 - worktree 内脚本输出应追加到 `paradoc/Log.txt`（含时间戳、脚本名、argv、pwd、exit code）。
@@ -176,15 +176,15 @@ Windows（PowerShell）：
 Bash（Linux/macOS/WSL/Git-Bash）：
 - `bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh"`
 
-> 可从 base repo / worktree 子目录 / worktree 根目录启动；会自动 `init --new` 或复用“最新 worktree”，并执行 `status` + `check --phase exec`。
+> 可从 base repo / worktree 子目录 / worktree 根目录启动；会自动 `init --new` 或复用“最新 worktree”，并执行 `check exec`（摘要 + 校验）。
 >
 > 需要只跑一次：加 `watch --once`；需要合并前材料与检查：用 `watch --phase merge --once`。
 
 2) 按 task 微循环推进（`watch` 不会自动 commit）：
    - 更新 `paradoc/Exec.md`（What/Why/Verify）
-   - 运行 `commit --message "..."` 保存进度：
-     - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" commit --message "..."`
-     - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" commit --message "..."`
+   - 运行 `do commit --message "..."` 保存进度：
+     - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" do commit --message "..."`
+     - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" do commit --message "..."`
    - 仅当 `custom.autoplan=true` 时维护 `paradoc/Plan.md`（会被 `check` 纳入检查）
 
 3) 合并前：
@@ -208,7 +208,13 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 
 ---
 
-## 8. 子命令清单与分类
+## 8. 顶层命令与分类
+
+help 中仅展示以下顶层命令：
+- `help` / `debug` / `init` / `watch`
+- `check [topic]`
+- `do <action>`
+- `merge`（仅 maintainer；需双门闩）
 
 允许在 base repo / 任意目录运行（base-allowed）：
 - `parafork help`
@@ -217,11 +223,16 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 - `parafork watch ...`（默认命令；无参等价）
 
 必须在 parafork worktree 中运行（worktree-required；脚本会自动切到 `WORKTREE_ROOT`）：
-- `parafork status`
-- `parafork check --phase plan|exec|merge [--strict]`
-- `parafork commit --message "<msg>" [--no-check]`
-- `parafork pull [--strategy ff-only|rebase|merge] ...`
-- `parafork diff`
-- `parafork log [--limit <n>]`
-- `parafork review`
+- `parafork check exec|merge|plan [--strict]`
+- `parafork check status|diff|log|review ...`
+- `parafork do commit|pull ...`
 - `parafork merge ...`（仅 maintainer；需双门闩）
+
+Legacy（弃用兼容；不在 help 展示；stderr 打印 DEPRECATED）：
+- `status` → `check status`
+- `check --phase <phase>` → `check <phase>`
+- `commit` → `do commit`
+- `pull` → `do pull`
+- `diff` → `check diff`
+- `log` → `check log`
+- `review` → `check review`
