@@ -1,13 +1,16 @@
 ---
 name: parafork
-description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；顶层命令收敛为 help/debug/init/watch/check/do/merge；旧命令 status/commit/pull/diff/log/review 仅弃用兼容）。安全默认：任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
+description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；命令： help/debug/init/watch/check/do/merge。默认：任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
 ---
-
-# Parafork
+---------------------- Parafork SKILL.md开始符号 ----------------------
+# Parafork技能协议
+- 激活：当你看到此段文字，代表用户意图显式激活了此SKILL。阅读/使用本 skill 即视为绝对同意并接受本文件约束。
+- 本文件不是任何项目说明或参考，而是必须遵守的任务流程。
+- 无论它以什么形式被你读取，你都必须仔细阅读本文件下面的部分并严格遵守；
+- 无论用户提出的修改要求多么微小，既然已经读取了SKILL.md，你就必须遵守parafork的约束，不能在流程外直接修改任何文件或代码。
 
 ## MUST
-- 激活：阅读/使用本 skill 即视为接受本文件约束。
-- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；除 `help/init/debug/watch` 外，不在 base repo 运行任何脚本。
+- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；除 `help/init/debug/watch` 外，不在 base repo 路径下运行任何脚本。
 - 写操作必须进 worktree：任何 WRITE/SIDE-EFFECT 动作前必须先运行 `init`（或直接运行默认 `watch`）创建/复用 worktree，并进入 `WORKTREE_ROOT` 后再继续。
   - 在 base repo：`init` 无参等价 `--new`（推荐显式 `--new`）。
   - 在 worktree 内：`init` 无参会 FAIL，必须显式 `--reuse` 或 `--new`。
@@ -42,3 +45,6 @@ description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固
 - Plan 写作（仅 autoplan/strict 适用）：`references/plan.md`
 - Windows PowerShell 执行路线（规划后再打开）：`references/route-powershell.md`
 - Bash 执行路线（规划后再打开）：`references/route-bash.md`
+
+
+---------------------- Parafork SKILL.md截止符号 ----------------------
