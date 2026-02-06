@@ -202,7 +202,7 @@ Options:
   --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
   --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
   --no-remote              Force REMOTE_NAME empty for this session
-  --no-fetch               Skip fetch (requires --yes --i-am-maintainer when remote is available)
+  --no-fetch               Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --yes                    Confirmation gate for risky flags
   --i-am-maintainer        Confirmation gate for risky flags
 EOF
@@ -299,9 +299,10 @@ EOF
     parafork_die "missing config: $config_path (parafork skill package incomplete?)"
   fi
 
-  local config_base_branch config_remote_name workdir_root workdir_rule autoplan
+  local config_base_branch config_remote_name config_remote_autosync workdir_root workdir_rule autoplan
   config_base_branch="$(parafork_toml_get_str "$config_path" "base" "branch" "main")"
   config_remote_name="$(parafork_toml_get_str "$config_path" "remote" "name" "")"
+  config_remote_autosync="$(parafork_toml_get_bool "$config_path" "remote" "autosync" "false")"
   workdir_root="$(parafork_toml_get_str "$config_path" "workdir" "root" ".parafork")"
   workdir_rule="$(parafork_toml_get_str "$config_path" "workdir" "rule" "{YYMMDD}-{HEX4}")"
   autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "true")"
@@ -315,6 +316,8 @@ EOF
 
   local remote_name_source="config"
   local remote_name="$config_remote_name"
+  local remote_autosync_source="config"
+  local remote_autosync="$config_remote_autosync"
   if [[ "$no_remote" == "true" ]]; then
     remote_name_source="none"
     remote_name=""
@@ -332,16 +335,29 @@ EOF
     remote_available="true"
   fi
 
-  if [[ "$remote_available" == "true" && "$no_fetch" == "true" ]]; then
+  local remote_sync_enabled="false"
+  if [[ "$remote_available" == "true" && "$remote_autosync" == "true" ]]; then
+    remote_sync_enabled="true"
+  fi
+
+  if [[ "$remote_sync_enabled" == "true" && "$no_fetch" == "true" ]]; then
     parafork_require_yes_i_am_maintainer_for_flag "--no-fetch" "$yes" "$iam"
   fi
 
-  if [[ "$remote_available" == "true" && "$no_fetch" != "true" ]]; then
+  if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
     git -C "$base_root" fetch "$remote_name"
   fi
 
+  if [[ "$remote_autosync" != "true" ]]; then
+    local base_changes
+    base_changes="$(git -C "$base_root" status --porcelain | wc -l | tr -d ' ')"
+    if [[ "$base_changes" != "0" ]]; then
+      echo "WARN: base repo has uncommitted changes; init uses committed local '$base_branch' only"
+    fi
+  fi
+
   local worktree_start_point="$base_branch"
-  if [[ "$remote_available" == "true" && "$no_fetch" != "true" ]]; then
+  if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
     worktree_start_point="$remote_name/$base_branch"
   fi
 
@@ -398,8 +414,10 @@ WORKTREE_START_POINT=$worktree_start_point
 WORKTREE_USED=1
 BASE_BRANCH=$base_branch
 REMOTE_NAME=$remote_name
+REMOTE_AUTOSYNC=$remote_autosync
 BASE_BRANCH_SOURCE=$base_branch_source
 REMOTE_NAME_SOURCE=$remote_name_source
+REMOTE_AUTOSYNC_SOURCE=$remote_autosync_source
 CREATED_AT=$created_at
 EOF
 
@@ -923,7 +941,7 @@ High-risk strategies require approval + CLI gates:
 
 Options:
   --strategy ff-only|rebase|merge
-  --no-fetch                 Skip fetch (requires --yes --i-am-maintainer when remote is available)
+  --no-fetch                 Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --allow-config-drift        Override session config drift checks (requires --yes --i-am-maintainer)
   --yes --i-am-maintainer     Confirmation gates for risky flags
 EOF
@@ -946,7 +964,7 @@ EOF
   cd "$PARAFORK_WORKTREE_ROOT"
 
   pull_body() {
-    local pwd worktree_id symbol_path worktree_root base_root base_branch remote_name
+    local pwd worktree_id symbol_path worktree_root base_root base_branch remote_name remote_autosync
     pwd="$(pwd -P)"
     symbol_path="$pwd/.worktree-symbol"
     worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
@@ -954,6 +972,7 @@ EOF
     base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
     base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
     remote_name="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME" || echo "")"
+    remote_autosync="$(parafork_remote_autosync_from_symbol_or_config "$base_root" "$symbol_path")"
 
     if [[ -n "$base_root" ]]; then
       parafork_check_config_drift "$base_root" "$allow_drift" "$yes" "$iam" "$symbol_path"
@@ -963,12 +982,18 @@ EOF
     if [[ -n "$base_root" ]] && parafork_is_remote_available "$base_root" "$remote_name"; then
       remote_available="true"
     fi
-    if [[ "$remote_available" == "true" && "$no_fetch" == "true" ]]; then
+
+    local remote_sync_enabled="false"
+    if [[ "$remote_available" == "true" && "$remote_autosync" == "true" ]]; then
+      remote_sync_enabled="true"
+    fi
+
+    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" == "true" ]]; then
       parafork_require_yes_i_am_maintainer_for_flag "--no-fetch" "$yes" "$iam"
     fi
 
     local upstream="$base_branch"
-    if [[ "$remote_available" == "true" && "$no_fetch" != "true" ]]; then
+    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
       git -C "$base_root" fetch "$remote_name"
       upstream="$remote_name/$base_branch"
     fi
@@ -1199,7 +1224,7 @@ Preview-only unless all gates are satisfied:
 
 Options:
   --message "<msg>"          Override merge commit message (squash mode)
-  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer)
+  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --allow-config-drift        Override session config drift checks (requires --yes --i-am-maintainer)
 EOF
         exit 0
@@ -1216,7 +1241,7 @@ EOF
   cd "$PARAFORK_WORKTREE_ROOT"
 
   merge_body() {
-    local pwd symbol_path worktree_id worktree_root base_root base_branch remote_name worktree_branch
+    local pwd symbol_path worktree_id worktree_root base_root base_branch remote_name remote_autosync worktree_branch
     pwd="$(pwd -P)"
     symbol_path="$pwd/.worktree-symbol"
     worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
@@ -1224,6 +1249,7 @@ EOF
     base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
     base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
     remote_name="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME" || echo "")"
+    remote_autosync="$(parafork_remote_autosync_from_symbol_or_config "$base_root" "$symbol_path")"
     worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
 
     if [[ -n "$base_root" ]]; then
@@ -1238,7 +1264,13 @@ EOF
     if [[ -n "$base_root" ]] && parafork_is_remote_available "$base_root" "$remote_name"; then
       remote_available="true"
     fi
-    if [[ "$remote_available" == "true" && "$no_fetch" == "true" ]]; then
+
+    local remote_sync_enabled="false"
+    if [[ "$remote_available" == "true" && "$remote_autosync" == "true" ]]; then
+      remote_sync_enabled="true"
+    fi
+
+    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" == "true" ]]; then
       parafork_require_yes_i_am_maintainer_for_flag "--no-fetch" "$yes" "$iam"
     fi
 
@@ -1283,7 +1315,7 @@ EOF
       return 1
     fi
 
-    if [[ "$remote_available" == "true" && "$no_fetch" != "true" ]]; then
+    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
       git -C "$base_root" fetch "$remote_name"
       git -C "$base_root" rev-parse --verify "$remote_name/$base_branch^{commit}" >/dev/null 2>&1 || \
         parafork_die "missing remote base ref: $remote_name/$base_branch"
@@ -1294,6 +1326,8 @@ EOF
         parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve base/remote divergence manually, then retry"
         return 1
       fi
+    elif [[ "$remote_available" == "true" && "$remote_sync_enabled" != "true" ]]; then
+      echo "WARN: remote.autosync=false; skip remote-base alignment and use local base"
     elif [[ "$remote_available" == "true" && "$no_fetch" == "true" ]]; then
       echo "WARN: --no-fetch used; merge may target an out-of-date base"
     fi

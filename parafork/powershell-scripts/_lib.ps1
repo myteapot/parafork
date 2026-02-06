@@ -457,6 +457,25 @@ function ParaforkRequireYesIam {
   }
 }
 
+function ParaforkRemoteAutosyncFromSymbolOrConfig {
+  param(
+    [string]$BaseRoot,
+    [string]$SymbolPath
+  )
+
+  $symbolRemoteAutosync = ParaforkSymbolGet $SymbolPath 'REMOTE_AUTOSYNC'
+  if ($symbolRemoteAutosync -eq 'true' -or $symbolRemoteAutosync -eq 'false') {
+    return $symbolRemoteAutosync
+  }
+
+  $configPath = ParaforkConfigPath
+  if (-not (Test-Path -LiteralPath $configPath)) {
+    ParaforkDie "missing config: $configPath"
+  }
+
+  return (ParaforkTomlGetBool $configPath 'remote' 'autosync' 'false')
+}
+
 function ParaforkCheckConfigDrift {
   param(
     [string]$AllowDrift,
@@ -472,12 +491,15 @@ function ParaforkCheckConfigDrift {
 
   $baseBranchSource = ParaforkSymbolGet $SymbolPath 'BASE_BRANCH_SOURCE'
   $remoteNameSource = ParaforkSymbolGet $SymbolPath 'REMOTE_NAME_SOURCE'
+  $remoteAutosyncSource = ParaforkSymbolGet $SymbolPath 'REMOTE_AUTOSYNC_SOURCE'
 
   $symbolBaseBranch = ParaforkSymbolGet $SymbolPath 'BASE_BRANCH'
   $symbolRemoteName = ParaforkSymbolGet $SymbolPath 'REMOTE_NAME'
+  $symbolRemoteAutosync = ParaforkSymbolGet $SymbolPath 'REMOTE_AUTOSYNC'
 
   $configBaseBranch = ParaforkTomlGetStr $configPath 'base' 'branch' 'main'
   $configRemoteName = ParaforkTomlGetStr $configPath 'remote' 'name' ''
+  $configRemoteAutosync = ParaforkTomlGetBool $configPath 'remote' 'autosync' 'false'
 
   if ($baseBranchSource -eq 'config' -and $configBaseBranch -ne $symbolBaseBranch) {
     if ($AllowDrift -ne 'true') {
@@ -489,6 +511,13 @@ function ParaforkCheckConfigDrift {
   if ($remoteNameSource -eq 'config' -and $configRemoteName -ne $symbolRemoteName) {
     if ($AllowDrift -ne 'true') {
       ParaforkDie ("config drift detected (remote.name): symbol='{0}' config='{1}' (rerun with --allow-config-drift --yes --i-am-maintainer to override)" -f $symbolRemoteName, $configRemoteName)
+    }
+    ParaforkRequireYesIam '--allow-config-drift' $Yes $Iam
+  }
+
+  if ($remoteAutosyncSource -eq 'config' -and -not [string]::IsNullOrEmpty($symbolRemoteAutosync) -and $configRemoteAutosync -ne $symbolRemoteAutosync) {
+    if ($AllowDrift -ne 'true') {
+      ParaforkDie ("config drift detected (remote.autosync): symbol='{0}' config='{1}' (rerun with --allow-config-drift --yes --i-am-maintainer to override)" -f $symbolRemoteAutosync, $configRemoteAutosync)
     }
     ParaforkRequireYesIam '--allow-config-drift' $Yes $Iam
   }

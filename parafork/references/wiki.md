@@ -119,7 +119,8 @@
 - `WORKTREE_BRANCH` / `WORKTREE_START_POINT`
 - `WORKTREE_USED`（`0|1`；顺序门闩，worktree-required 子命令要求为 `1`）
 - `BASE_BRANCH` / `REMOTE_NAME`
-- `BASE_BRANCH_SOURCE` / `REMOTE_NAME_SOURCE`（`config|cli|none`）
+- `REMOTE_AUTOSYNC`（`true|false`）
+- `BASE_BRANCH_SOURCE` / `REMOTE_NAME_SOURCE` / `REMOTE_AUTOSYNC_SOURCE`（`config|cli|none`）
 - `CREATED_AT`（UTC）
 
 ---
@@ -136,6 +137,7 @@ branch = "main"
 
 [remote]
 name = "origin"
+autosync = false      # true=fetch remote and align base->remote before merge
 
 [workdir]
 root = ".parafork"
@@ -148,6 +150,8 @@ autoformat = true      # check 的文档结构/占位符检查开关
 [control]
 squash = true          # merge：true=--squash，false=--no-ff
 ```
+
+`--no-fetch` 仅控制是否执行 `git fetch <remote>`。当 `remote.autosync=false` 时，默认使用本地 `base.branch` 的已提交状态作为基线。
 
 ---
 

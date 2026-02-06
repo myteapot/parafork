@@ -3,6 +3,7 @@ branch = "main"
 
 [remote]
 name = "origin"
+autosync = false # when true, fetch remote and align base to remote base before merge
 
 [workdir]
 root = ".parafork"
@@ -14,4 +15,3 @@ autoformat = true
 
 [control]
 squash = true
-

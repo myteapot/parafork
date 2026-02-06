@@ -226,6 +226,7 @@ function InitNewWorktree {
 
   $configBaseBranch = ParaforkTomlGetStr $configPath 'base' 'branch' 'main'
   $configRemoteName = ParaforkTomlGetStr $configPath 'remote' 'name' ''
+  $configRemoteAutosync = ParaforkTomlGetBool $configPath 'remote' 'autosync' 'false'
   $workdirRoot = ParaforkTomlGetStr $configPath 'workdir' 'root' '.parafork'
   $workdirRule = ParaforkTomlGetStr $configPath 'workdir' 'rule' '{YYMMDD}-{HEX4}'
   $autoplan = ParaforkTomlGetBool $configPath 'custom' 'autoplan' 'false'
@@ -239,6 +240,8 @@ function InitNewWorktree {
 
   $remoteNameSource = 'config'
   $remoteName = $configRemoteName
+  $remoteAutosyncSource = 'config'
+  $remoteAutosync = $configRemoteAutosync
   if ($NoRemote) {
     $remoteNameSource = 'none'
     $remoteName = ''
@@ -250,19 +253,28 @@ function InitNewWorktree {
   }
 
   $remoteAvailable = ParaforkIsRemoteAvailable $baseRoot $remoteName
-  if ($remoteAvailable -and $NoFetch) {
+  $remoteSyncEnabled = ($remoteAvailable -and $remoteAutosync -eq 'true')
+
+  if ($remoteSyncEnabled -and $NoFetch) {
     ParaforkRequireYesIam '--no-fetch' $Yes $Iam
   }
 
-  if ($remoteAvailable -and -not $NoFetch) {
+  if ($remoteSyncEnabled -and -not $NoFetch) {
     & git -C $baseRoot fetch $remoteName
     if ($LASTEXITCODE -ne 0) {
       ParaforkDie "git fetch failed: $remoteName"
     }
   }
 
+  if ($remoteAutosync -ne 'true') {
+    $baseChanges = (& git -C $baseRoot status --porcelain 2>$null | Measure-Object).Count
+    if ($baseChanges -ne 0) {
+      Write-Output ("WARN: base repo has uncommitted changes; init uses committed local '{0}' only" -f $baseBranch)
+    }
+  }
+
   $worktreeStartPoint = $baseBranch
-  if ($remoteAvailable -and -not $NoFetch) {
+  if ($remoteSyncEnabled -and -not $NoFetch) {
     $worktreeStartPoint = "$remoteName/$baseBranch"
   }
 
@@ -312,8 +324,10 @@ function InitNewWorktree {
       'WORKTREE_USED=1'
       ("BASE_BRANCH={0}" -f $baseBranch)
       ("REMOTE_NAME={0}" -f $remoteName)
+      ("REMOTE_AUTOSYNC={0}" -f $remoteAutosync)
       ("BASE_BRANCH_SOURCE={0}" -f $baseBranchSource)
       ("REMOTE_NAME_SOURCE={0}" -f $remoteNameSource)
+      ("REMOTE_AUTOSYNC_SOURCE={0}" -f $remoteAutosyncSource)
       ("CREATED_AT={0}" -f $createdAt)
     ) -join "`n"
 
@@ -728,11 +742,35 @@ function CmdInit {
         continue
       }
       '--help' {
-        Write-Output "Usage: $ENTRY_CMD init [--new|--reuse] [options]"
+        Write-Output ("
+Usage: $ENTRY_CMD init [--new|--reuse] [options]
+
+Options:
+  --new                    Create a new worktree session
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1)
+  --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
+  --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
+  --no-remote              Force REMOTE_NAME empty for this session
+  --no-fetch               Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
+  --yes                    Confirmation gate for risky flags
+  --i-am-maintainer        Confirmation gate for risky flags
+")
         return 0
       }
       '-h' {
-        Write-Output "Usage: $ENTRY_CMD init [--new|--reuse] [options]"
+        Write-Output ("
+Usage: $ENTRY_CMD init [--new|--reuse] [options]
+
+Options:
+  --new                    Create a new worktree session
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1)
+  --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
+  --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
+  --no-remote              Force REMOTE_NAME empty for this session
+  --no-fetch               Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
+  --yes                    Confirmation gate for risky flags
+  --i-am-maintainer        Confirmation gate for risky flags
+")
         return 0
       }
       default {
@@ -1202,6 +1240,12 @@ Default: ff-only (refuse if not fast-forward)
 High-risk strategies require approval + CLI gates:
 - rebase: PARAFORK_APPROVE_PULL_REBASE=1 (or git config parafork.approval.pull.rebase=true) + --yes --i-am-maintainer
 - merge:  PARAFORK_APPROVE_PULL_MERGE=1  (or git config parafork.approval.pull.merge=true)  + --yes --i-am-maintainer
+
+Options:
+  --strategy ff-only|rebase|merge
+  --no-fetch                 Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
+  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
+  --yes --i-am-maintainer    Confirmation gates for risky flags
 ")
         return 0
       }
@@ -1210,6 +1254,12 @@ High-risk strategies require approval + CLI gates:
 Usage: $ENTRY_CMD do pull [options]
 
 Default: ff-only (refuse if not fast-forward)
+
+Options:
+  --strategy ff-only|rebase|merge
+  --no-fetch                 Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
+  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
+  --yes --i-am-maintainer    Confirmation gates for risky flags
 ")
         return 0
       }
@@ -1244,17 +1294,19 @@ Default: ff-only (refuse if not fast-forward)
       ParaforkCheckConfigDrift $allowDriftStr $yes $iam $symbolPath
     }
 
+    $remoteAutosync = ParaforkRemoteAutosyncFromSymbolOrConfig $baseRoot $symbolPath
     $remoteAvailable = $false
     if (-not [string]::IsNullOrEmpty($baseRoot) -and (ParaforkIsRemoteAvailable $baseRoot $remoteName)) {
       $remoteAvailable = $true
     }
+    $remoteSyncEnabled = ($remoteAvailable -and $remoteAutosync -eq 'true')
 
-    if ($remoteAvailable -and $noFetch) {
+    if ($remoteSyncEnabled -and $noFetch) {
       ParaforkRequireYesIam '--no-fetch' $yes $iam
     }
 
     $upstream = $baseBranch
-    if ($remoteAvailable -and -not $noFetch) {
+    if ($remoteSyncEnabled -and -not $noFetch) {
       & git -C $baseRoot fetch $remoteName
       if ($LASTEXITCODE -ne 0) {
         ParaforkDie "git fetch failed: $remoteName"
@@ -1523,11 +1575,27 @@ Usage: $ENTRY_CMD merge [options]
 Preview-only unless all gates are satisfied:
 - local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
 - CLI gate: --yes --i-am-maintainer
+
+Options:
+  --message \"<msg>\"         Override merge commit message (squash mode)
+  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
+  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
 ")
         return 0
       }
       '-h' {
-        Write-Output "Usage: $ENTRY_CMD merge [options]"
+        Write-Output ("
+Usage: $ENTRY_CMD merge [options]
+
+Preview-only unless all gates are satisfied:
+- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
+- CLI gate: --yes --i-am-maintainer
+
+Options:
+  --message \"<msg>\"         Override merge commit message (squash mode)
+  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
+  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
+")
         return 0
       }
       default {
@@ -1562,12 +1630,14 @@ Preview-only unless all gates are satisfied:
       ParaforkCheckConfigDrift $allowDriftStr $yes $iam $symbolPath
     }
 
+    $remoteAutosync = ParaforkRemoteAutosyncFromSymbolOrConfig $baseRoot $symbolPath
     $remoteAvailable = $false
     if ($baseRoot -and (ParaforkIsRemoteAvailable $baseRoot $remoteName)) {
       $remoteAvailable = $true
     }
+    $remoteSyncEnabled = ($remoteAvailable -and $remoteAutosync -eq 'true')
 
-    if ($remoteAvailable -and $noFetch) {
+    if ($remoteSyncEnabled -and $noFetch) {
       ParaforkRequireYesIam '--no-fetch' $yes $iam
     }
 
@@ -1622,7 +1692,7 @@ Preview-only unless all gates are satisfied:
       throw 'base branch mismatch'
     }
 
-    if ($remoteAvailable -and -not $noFetch) {
+    if ($remoteSyncEnabled -and -not $noFetch) {
       & git -C $baseRoot fetch $remoteName
       if ($LASTEXITCODE -ne 0) {
         ParaforkDie "git fetch failed: $remoteName"
@@ -1641,6 +1711,8 @@ Preview-only unless all gates are satisfied:
         ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'resolve base/remote divergence manually, then retry'
         throw 'base not ff-only'
       }
+    } elseif ($remoteAvailable -and -not $remoteSyncEnabled) {
+      Write-Output 'WARN: remote.autosync=false; skip remote-base alignment and use local base'
     } elseif ($remoteAvailable -and $noFetch) {
       Write-Output 'WARN: --no-fetch used; merge may target an out-of-date base'
     }
