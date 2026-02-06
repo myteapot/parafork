@@ -45,6 +45,7 @@ description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/chec
 - 设计/术语/硬约束 SSOT：`references/wiki.md`
 - 脚本清单与可运行范围：`references/scripts.md`
 - Plan 写作（仅 autoplan/strict 适用）：`references/plan.md`
+- 回归检查清单：`references/regression-checklist.md`
 - Windows PowerShell 执行路线（规划后再打开）：`references/route-powershell.md`
 - Bash 执行路线（规划后再打开）：`references/route-bash.md`
 

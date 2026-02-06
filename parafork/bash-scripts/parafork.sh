@@ -8,10 +8,75 @@ source "$SCRIPT_DIR/_lib.sh"
 INVOCATION_PWD="$(pwd -P)"
 ENTRY_CMD="bash \"$SCRIPT_DIR/parafork.sh\""
 
+PARAFORK_LAST_INIT_MODE=""
+PARAFORK_LAST_INIT_WORKTREE_ID=""
+PARAFORK_LAST_INIT_WORKTREE_ROOT=""
+
+parafork_usage_init() {
+  cat <<EOF
+Usage: $ENTRY_CMD init [--new|--reuse] [options]
+
+Entry behavior:
+  - In base repo: no args defaults to --new
+  - Inside a worktree: no args FAIL (must choose --reuse or --new)
+
+Options:
+  --new                    Create a new worktree session
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
+  --yes                    Confirmation gate for risky flags
+  --i-am-maintainer        Confirmation gate for risky flags
+EOF
+}
+
+parafork_usage_check() {
+  cat <<EOF
+Usage: $ENTRY_CMD check [topic] [args...]
+
+Topics:
+  merge [--strict]
+  status    (default)
+EOF
+}
+
+parafork_usage_do() {
+  cat <<EOF
+Usage: $ENTRY_CMD do <action> [args...]
+
+Actions:
+  exec [--loop] [--interval <sec>] [--strict]
+  commit --message "<msg>" [--no-check]
+EOF
+}
+
+parafork_usage_do_exec() {
+  cat <<EOF
+Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]
+EOF
+}
+
+parafork_usage_do_commit() {
+  cat <<EOF
+Usage: $ENTRY_CMD do commit --message "<msg>" [--no-check]
+EOF
+}
+
+parafork_usage_merge() {
+  cat <<EOF
+Usage: $ENTRY_CMD merge [options]
+
+Preview-only unless all gates are satisfied:
+- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
+- CLI gate: --yes --i-am-maintainer
+
+Options:
+  --message "<msg>"          Override merge commit message (squash mode)
+EOF
+}
+
 parafork_fallback_output_block() {
   local code="$1"
   if [[ "$code" -ne 0 && "${PARAFORK_OUTPUT_BLOCK_PRINTED:-0}" != "1" ]]; then
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help debug"
+    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help --debug"
   fi
 }
 
@@ -82,7 +147,7 @@ cmd_debug() {
         parafork_print_kv SYMBOL_PATH "$symbol_path"
         parafork_print_output_block "$worktree_id" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD do exec"
       }
-      parafork_invoke_logged "$worktree_root" "parafork help debug" "$ENTRY_CMD help debug" -- debug_body
+      parafork_invoke_logged "$worktree_root" "parafork help debug" "$ENTRY_CMD help --debug" -- debug_body
       return 0
     fi
 
@@ -141,6 +206,10 @@ cmd_debug() {
 cmd_init() {
   local invocation_pwd="$INVOCATION_PWD"
 
+  PARAFORK_LAST_INIT_MODE=""
+  PARAFORK_LAST_INIT_WORKTREE_ID=""
+  PARAFORK_LAST_INIT_WORKTREE_ROOT=""
+
   local mode="auto" # auto|new|reuse
   local yes="false"
   local iam="false"
@@ -170,19 +239,7 @@ cmd_init() {
         shift
         ;;
       -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD init [--new|--reuse] [options]
-
-Entry behavior:
-  - In base repo: no args defaults to --new
-  - Inside a worktree: no args FAIL (must choose --reuse or --new)
-
-Options:
-  --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
-  --yes                    Confirmation gate for risky flags
-  --i-am-maintainer        Confirmation gate for risky flags
-EOF
+        parafork_usage_init
         exit 0
         ;;
       *)
@@ -203,7 +260,7 @@ EOF
     local parafork_worktree
     parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
     if [[ "$parafork_worktree" != "1" ]]; then
-      parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "$ENTRY_CMD help debug"
+      parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "$ENTRY_CMD help --debug"
       parafork_die "found .worktree-symbol but not a parafork worktree: $symbol_path"
     fi
     in_worktree="true"
@@ -228,7 +285,7 @@ EOF
   fi
 
   if [[ "$in_worktree" != "true" && "$mode" == "reuse" ]]; then
-    parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "$ENTRY_CMD help debug"
+    parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "$ENTRY_CMD help --debug"
     parafork_die "--reuse requires being inside an existing parafork worktree"
   fi
 
@@ -253,6 +310,10 @@ EOF
     worktree_id="${symbol_worktree_id:-UNKNOWN}"
     worktree_root="$symbol_worktree_root"
     [[ -n "$worktree_root" ]] || parafork_die "missing WORKTREE_ROOT in .worktree-symbol: $symbol_path"
+
+    PARAFORK_LAST_INIT_MODE="reuse"
+    PARAFORK_LAST_INIT_WORKTREE_ID="$worktree_id"
+    PARAFORK_LAST_INIT_WORKTREE_ROOT="$worktree_root"
 
     parafork_symbol_set "$symbol_path" "WORKTREE_USED" "1"
     parafork_write_worktree_lock "$symbol_path"
@@ -408,6 +469,11 @@ EOF
   parafork_print_kv WORKTREE_START_POINT "$worktree_start_point"
   parafork_print_kv START_COMMIT "$start_commit"
   parafork_print_kv BASE_COMMIT "$base_commit"
+
+  PARAFORK_LAST_INIT_MODE="new"
+  PARAFORK_LAST_INIT_WORKTREE_ID="$worktree_id"
+  PARAFORK_LAST_INIT_WORKTREE_ROOT="$worktree_root"
+
   parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD do exec"
 }
 
@@ -606,7 +672,7 @@ cmd_check_merge() {
 
     do_status "false"
     do_review "false"
-    if ! do_check "merge" "$strict" "cli"; then
+    if ! do_check "merge" "$strict"; then
       parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"
       return 1
     fi
@@ -630,13 +696,7 @@ cmd_check() {
         shift
         ;;
       -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD check [topic] [args...]
-
-Topics:
-  merge [--strict]
-  status    (default)
-EOF
+        parafork_usage_check
         exit 0
         ;;
       *)
@@ -678,9 +738,7 @@ cmd_do_exec() {
         shift 2
         ;;
       -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]
-EOF
+        parafork_usage_do_exec
         exit 0
         ;;
       *)
@@ -703,7 +761,7 @@ EOF
 
   do_exec_once() {
     do_status "false"
-    if ! do_check "exec" "$strict" "do"; then
+    if ! do_check "exec" "$strict"; then
       parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues and rerun: $ENTRY_CMD do exec"
       return 1
     fi
@@ -762,9 +820,7 @@ cmd_do_commit() {
         shift
         ;;
       -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD do commit --message "<msg>" [--no-check]
-EOF
+        parafork_usage_do_commit
         exit 0
         ;;
       *)
@@ -786,7 +842,7 @@ EOF
 
   commit_body() {
     if [[ "$no_check" != "true" ]]; then
-      if ! do_check "exec" "false" "cli"; then
+      if ! do_check "exec" "false"; then
         echo "REFUSED: check failed"
         parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then retry: $ENTRY_CMD do commit --message \"...\""
         return 1
@@ -821,13 +877,7 @@ EOF
 cmd_do() {
   local action="${1:-}"
   if [[ -z "$action" || "$action" == "-h" || "$action" == "--help" ]]; then
-    cat <<EOF
-Usage: $ENTRY_CMD do <action> [args...]
-
-Actions:
-  exec [--loop] [--interval <sec>] [--strict]
-  commit --message "<msg>" [--no-check]
-EOF
+    parafork_usage_do
     exit 0
   fi
 
@@ -859,16 +909,7 @@ cmd_merge() {
         shift 2
         ;;
       -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD merge [options]
-
-Preview-only unless all gates are satisfied:
-- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
-- CLI gate: --yes --i-am-maintainer
-
-Options:
-  --message "<msg>"          Override merge commit message (squash mode)
-EOF
+        parafork_usage_merge
         exit 0
         ;;
       *)
@@ -914,7 +955,7 @@ EOF
 
     do_status "false"
     do_review "false"
-    if ! do_check "merge" "false" "cli"; then
+    if ! do_check "merge" "false"; then
       echo "REFUSED: check merge failed"
       parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"
       return 1
@@ -977,7 +1018,7 @@ EOF
     else
       if ! git -C "$base_root" merge --no-ff "$worktree_branch" -m "$message"; then
         echo "REFUSED: merge stopped (likely conflicts)"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git -C "$base_root" merge --continue (or git -C "$base_root" merge --abort)"
+        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git -C \"$base_root\" merge --continue (or git -C \"$base_root\" merge --abort)"
         return 1
       fi
     fi
@@ -1018,8 +1059,8 @@ cmd_default() {
   cmd_init --new
 
   local chosen
-  chosen="$(parafork_list_worktrees_newest_first "$base_root" | head -n 1 || true)"
-  [[ -n "$chosen" ]] || parafork_die "failed to locate new worktree"
+  chosen="$PARAFORK_LAST_INIT_WORKTREE_ROOT"
+  [[ -n "$chosen" ]] || parafork_die "failed to locate new worktree root after init"
 
   cd "$chosen"
   cmd_do exec

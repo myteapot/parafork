@@ -32,3 +32,7 @@
 ## 兼容性
 - 仅支持 canonical 顶层命令：`help/init/do/check/merge`。
 - 非 Core-Lite 命令/主题（如 `watch`、`do pull`、`check diff/log/review`）均不再支持。
+
+## 回归建议
+- 重构后可按 `references/regression-checklist.md` 做最小回归，覆盖无参入口、双门闩、并发锁、污染防护与 merge 前检查链。
+- 本次执行记录见：`references/test-report-2026-02-06.md`。

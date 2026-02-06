@@ -43,6 +43,63 @@ Notes:
 "@
 }
 
+function ParaforkUsageInit {
+  @"
+Usage: $ENTRY_CMD init [--new|--reuse] [options]
+
+Entry behavior:
+  - In base repo: no args defaults to --new
+  - Inside a worktree: no args FAIL (must choose --reuse or --new)
+
+Options:
+  --new                    Create a new worktree session
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
+  --yes                    Confirmation gate for risky flags
+  --i-am-maintainer        Confirmation gate for risky flags
+"@
+}
+
+function ParaforkUsageCheck {
+  @"
+Usage: $ENTRY_CMD check [topic] [args...]
+
+Topics:
+  merge [--strict]
+  status    (default)
+"@
+}
+
+function ParaforkUsageDo {
+  @"
+Usage: $ENTRY_CMD do <action> [args...]
+
+Actions:
+  exec [--loop] [--interval <sec>] [--strict]
+  commit --message "<msg>" [--no-check]
+"@
+}
+
+function ParaforkUsageDoExec {
+  "Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]"
+}
+
+function ParaforkUsageDoCommit {
+  'Usage: {0} do commit --message "<msg>" [--no-check]' -f $ENTRY_CMD
+}
+
+function ParaforkUsageMerge {
+  @"
+Usage: $ENTRY_CMD merge [options]
+
+Preview-only unless all gates are satisfied:
+- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
+- CLI gate: --yes --i-am-maintainer
+
+Options:
+  --message "<msg>"         Override merge commit message (squash mode)
+"@
+}
+
 function ParaforkWorkdirRoot {
   $configPath = ParaforkConfigPath
   $workdirRoot = '.parafork'
@@ -384,8 +441,7 @@ function DoStatus {
 function DoCheck {
   param(
     [Parameter(Mandatory = $true)][string]$Phase,
-    [bool]$Strict,
-    [Parameter(Mandatory = $true)][string]$Mode # cli|do
+    [bool]$Strict
   )
 
   $pwdNow = (Get-Location).Path
@@ -693,35 +749,11 @@ function CmdInit {
         continue
       }
       '--help' {
-        Write-Output ("
-Usage: $ENTRY_CMD init [--new|--reuse] [options]
-
-Entry behavior:
-  - In base repo: no args defaults to --new
-  - Inside a worktree: no args FAIL (must choose --reuse or --new)
-
-Options:
-  --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
-  --yes                    Confirmation gate for risky flags
-  --i-am-maintainer        Confirmation gate for risky flags
-")
+        Write-Output (ParaforkUsageInit)
         return 0
       }
       '-h' {
-        Write-Output ("
-Usage: $ENTRY_CMD init [--new|--reuse] [options]
-
-Entry behavior:
-  - In base repo: no args defaults to --new
-  - Inside a worktree: no args FAIL (must choose --reuse or --new)
-
-Options:
-  --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
-  --yes                    Confirmation gate for risky flags
-  --i-am-maintainer        Confirmation gate for risky flags
-")
+        Write-Output (ParaforkUsageInit)
         return 0
       }
       default {
@@ -863,7 +895,7 @@ function CmdCheckMerge {
     $pwdNow = (Get-Location).Path
     DoStatus $false
     DoReview $false
-    if (-not (DoCheck -Phase 'merge' -Strict:$Strict -Mode 'cli')) {
+    if (-not (DoCheck -Phase 'merge' -Strict:$Strict)) {
       ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('check', 'merge')))
       throw 'check failed'
     }
@@ -894,23 +926,11 @@ function CmdCheck {
         continue
       }
       '--help' {
-        Write-Output ("
-Usage: $ENTRY_CMD check [topic] [args...]
-
-Topics:
-  merge [--strict]
-  status    (default)
-")
+        Write-Output (ParaforkUsageCheck)
         return 0
       }
       '-h' {
-        Write-Output ("
-Usage: $ENTRY_CMD check [topic] [args...]
-
-Topics:
-  merge [--strict]
-  status    (default)
-")
+        Write-Output (ParaforkUsageCheck)
         return 0
       }
       default {
@@ -972,11 +992,11 @@ function CmdDoExec {
         continue
       }
       '--help' {
-        Write-Output "Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]"
+        Write-Output (ParaforkUsageDoExec)
         return 0
       }
       '-h' {
-        Write-Output "Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]"
+        Write-Output (ParaforkUsageDoExec)
         return 0
       }
       default { ParaforkDie ("unknown arg: {0}" -f $a) }
@@ -998,7 +1018,7 @@ function CmdDoExec {
 
   $execOnce = {
     DoStatus $false
-    if (-not (DoCheck -Phase 'exec' -Strict:$strict -Mode 'do')) {
+    if (-not (DoCheck -Phase 'exec' -Strict:$strict)) {
       ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('do', 'exec')))
       throw 'check failed'
     }
@@ -1075,11 +1095,11 @@ function CmdDoCommit {
         continue
       }
       '--help' {
-        Write-Output ('Usage: {0} do commit --message "<msg>" [--no-check]' -f $ENTRY_CMD)
+        Write-Output (ParaforkUsageDoCommit)
         return 0
       }
       '-h' {
-        Write-Output ('Usage: {0} do commit --message "<msg>" [--no-check]' -f $ENTRY_CMD)
+        Write-Output (ParaforkUsageDoCommit)
         return 0
       }
       default {
@@ -1105,7 +1125,7 @@ function CmdDoCommit {
 
   $body = {
     if (-not $noCheck) {
-      if (-not (DoCheck -Phase 'exec' -Strict:$false -Mode 'cli')) {
+      if (-not (DoCheck -Phase 'exec' -Strict:$false)) {
         Write-Output 'REFUSED: check failed'
         ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues then retry: " + $commitCmd)
         throw 'check failed'
@@ -1158,13 +1178,7 @@ function CmdDo {
   if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   if (-not $CmdArgs -or $CmdArgs.Count -eq 0 -or $CmdArgs[0] -eq '--help' -or $CmdArgs[0] -eq '-h') {
-    Write-Output ("
-Usage: $ENTRY_CMD do <action> [args...]
-
-Actions:
-  exec [--loop] [--interval <sec>] [--strict]
-  commit --message ""<msg>"" [--no-check]
-")
+    Write-Output (ParaforkUsageDo)
     return 0
   }
 
@@ -1209,29 +1223,11 @@ function CmdMerge {
         continue
       }
       '--help' {
-        Write-Output ("
-Usage: $ENTRY_CMD merge [options]
-
-Preview-only unless all gates are satisfied:
-- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
-- CLI gate: --yes --i-am-maintainer
-
-Options:
-  --message ""<msg>""         Override merge commit message (squash mode)
-")
+        Write-Output (ParaforkUsageMerge)
         return 0
       }
       '-h' {
-        Write-Output ("
-Usage: $ENTRY_CMD merge [options]
-
-Preview-only unless all gates are satisfied:
-- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
-- CLI gate: --yes --i-am-maintainer
-
-Options:
-  --message ""<msg>""         Override merge commit message (squash mode)
-")
+        Write-Output (ParaforkUsageMerge)
         return 0
       }
       default {
@@ -1283,7 +1279,7 @@ Options:
 
     DoStatus $false
     DoReview $false
-    if (-not (DoCheck -Phase 'merge' -Strict:$false -Mode 'cli')) {
+    if (-not (DoCheck -Phase 'merge' -Strict:$false)) {
       Write-Output 'REFUSED: check merge failed'
       ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('check', 'merge')))
       throw 'check failed'
