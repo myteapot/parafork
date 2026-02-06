@@ -183,6 +183,49 @@ parafork_is_remote_available() {
   git -C "$base_root" remote get-url "$remote_name" >/dev/null 2>&1
 }
 
+parafork_agent_id() {
+  if [[ -n "${PARAFORK_AGENT_ID:-}" ]]; then
+    printf '%s' "$PARAFORK_AGENT_ID"
+    return 0
+  fi
+
+  if [[ -n "${CODEX_THREAD_ID:-}" ]]; then
+    printf 'codex:%s' "$CODEX_THREAD_ID"
+    return 0
+  fi
+
+  local user host
+  user="${USER:-unknown}"
+  host="$(hostname 2>/dev/null || echo "unknown-host")"
+  printf '%s@%s' "$user" "$host"
+}
+
+parafork_is_reuse_approved() {
+  local base_root="$1"
+
+  if [[ "${PARAFORK_APPROVE_REUSE:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  if [[ -n "$base_root" ]] && [[ "$(git -C "$base_root" config --bool --default false parafork.approval.reuse 2>/dev/null || true)" == "true" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+parafork_write_worktree_lock() {
+  local symbol_path="$1"
+  local agent_id lock_at
+
+  agent_id="$(parafork_agent_id)"
+  lock_at="$(parafork_now_utc)"
+
+  parafork_symbol_set "$symbol_path" "WORKTREE_LOCK" "1"
+  parafork_symbol_set "$symbol_path" "WORKTREE_LOCK_OWNER" "$agent_id"
+  parafork_symbol_set "$symbol_path" "WORKTREE_LOCK_AT" "$lock_at"
+}
+
 parafork_symbol_find_upwards() {
   local start="$1"
   local cur="$start"
@@ -333,6 +376,25 @@ parafork_guard_worktree() {
   if [[ "$worktree_used" != "1" ]]; then
     echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"
     parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$entry_cmd init --reuse"
+    return 1
+  fi
+
+  local lock_enabled lock_owner agent_id
+  lock_enabled="$(parafork_symbol_get "$symbol_path" "WORKTREE_LOCK" || true)"
+  lock_owner="$(parafork_symbol_get "$symbol_path" "WORKTREE_LOCK_OWNER" || true)"
+  agent_id="$(parafork_agent_id)"
+
+  if [[ "$lock_enabled" != "1" || -z "$lock_owner" ]]; then
+    parafork_write_worktree_lock "$symbol_path"
+    lock_enabled="1"
+    lock_owner="$agent_id"
+  fi
+
+  if [[ "$lock_enabled" == "1" && "$lock_owner" != "$agent_id" ]]; then
+    echo "REFUSED: worktree locked by another agent"
+    parafork_print_kv LOCK_OWNER "$lock_owner"
+    parafork_print_kv AGENT_ID "$agent_id"
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "cd \"$worktree_root\" && PARAFORK_APPROVE_REUSE=1 $entry_cmd init --reuse --yes --i-am-maintainer"
     return 1
   fi
 

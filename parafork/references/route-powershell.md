@@ -23,7 +23,7 @@
   - 可从 base repo / worktree 子目录 / worktree 根目录启动
   - 默认总是 `init --new`（不自动复用），并执行 `check exec`（摘要 + 校验）
 - 只跑一次不进入循环：`... watch --once`
-- 显式复用当前 worktree：`... watch --reuse-current`
+- 显式复用当前 worktree（需人类审批双门闩）：`$env:PARAFORK_APPROVE_REUSE=1; ... watch --reuse-current --yes --i-am-maintainer`
 - 合并前材料与检查（必须显式复用）：`... watch --phase merge --once --reuse-current`
 
 > `watch` 不会自动 `do commit/do pull/merge`；只在安全时输出一次 `NEXT`（可复制执行）。
@@ -31,7 +31,7 @@
 ## 2) 手动子命令（高级）
 
 - 新建 worktree：`... init --new`
-- 复用当前 worktree（补写 `WORKTREE_USED=1`）：`... init --reuse`
+- 复用当前 worktree（补写 `WORKTREE_USED=1`，并刷新锁；需人类审批双门闩）：`$env:PARAFORK_APPROVE_REUSE=1; ... init --reuse --yes --i-am-maintainer`
 
 在 worktree 内（任意子目录均可；脚本会切到 `WORKTREE_ROOT`）：
 - `... check status`
@@ -48,3 +48,9 @@
 - 推荐：先跑 `... watch --phase merge --once --reuse-current`，按 `NEXT` 执行 merge
 - 批准门闩（任选其一）：`$env:PARAFORK_APPROVE_MERGE=1` 或 base repo 本地 git config
 - 合并：`$env:PARAFORK_APPROVE_MERGE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`
+
+## 4) 并发锁冲突（人工接管）
+
+- 若提示 `REFUSED: worktree locked by another agent`，先由人类批准接管，再执行：
+  - `cd "<WORKTREE_ROOT>"`
+  - `$env:PARAFORK_APPROVE_REUSE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" init --reuse --yes --i-am-maintainer`

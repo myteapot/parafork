@@ -118,10 +118,15 @@
 - `WORKTREE_ID` / `BASE_ROOT` / `WORKTREE_ROOT`
 - `WORKTREE_BRANCH` / `WORKTREE_START_POINT`
 - `WORKTREE_USED`（`0|1`；顺序门闩，worktree-required 子命令要求为 `1`）
+- `WORKTREE_LOCK`（`1`）/ `WORKTREE_LOCK_OWNER` / `WORKTREE_LOCK_AT`（并发门禁）
 - `BASE_BRANCH` / `REMOTE_NAME`
 - `REMOTE_AUTOSYNC`（`true|false`）
 - `BASE_BRANCH_SOURCE` / `REMOTE_NAME_SOURCE` / `REMOTE_AUTOSYNC_SOURCE`（`config|cli|none`）
 - `CREATED_AT`（UTC）
+
+并发门禁规则：
+- 若缺失 `WORKTREE_LOCK*`（旧 worktree），脚本首次进入时会自动补锁。
+- 若 `WORKTREE_LOCK_OWNER` 与当前 agent 不一致，worktree-required 命令会拒绝执行并要求人工接管。
 
 ---
 
@@ -153,6 +158,11 @@ squash = true          # merge：true=--squash，false=--no-ff
 
 `--no-fetch` 仅控制是否执行 `git fetch <remote>`。当 `remote.autosync=false` 时，默认使用本地 `base.branch` 的已提交状态作为基线。
 
+复用审批门闩：
+- 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
+- CLI 门闩：`--yes --i-am-maintainer`
+- 两者必须同时满足，`init --reuse` / `watch --reuse-current` 才会放行。
+
 ---
 
 ## 6. 统一输出块（机器可解析协议）
@@ -182,7 +192,7 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 
 > 可从 base repo / worktree 子目录 / worktree 根目录启动；默认总是 `init --new`（不自动复用），并执行 `check exec`（摘要 + 校验）。
 >
-> 需要只跑一次：加 `watch --once`；需要复用当前 worktree：用 `watch --reuse-current`；需要合并前材料与检查：用 `watch --phase merge --once --reuse-current`。
+> 需要只跑一次：加 `watch --once`；需要复用当前 worktree：用 `PARAFORK_APPROVE_REUSE=1 watch --reuse-current --yes --i-am-maintainer`；需要合并前材料与检查：用 `watch --phase merge --once --reuse-current`（若复用，同样需要复用审批双门闩）。
 
 2) 按 task 微循环推进（`watch` 不会自动 commit）：
    - 更新 `paradoc/Exec.md`（What/Why/Verify）
@@ -232,11 +242,6 @@ help 中仅展示以下顶层命令：
 - `parafork do commit|pull ...`
 - `parafork merge ...`（仅 maintainer；需双门闩）
 
-Legacy（弃用兼容；不在 help 展示；stderr 打印 DEPRECATED）：
-- `status` → `check status`
-- `check --phase <phase>` → `check <phase>`
-- `commit` → `do commit`
-- `pull` → `do pull`
-- `diff` → `check diff`
-- `log` → `check log`
-- `review` → `check review`
+兼容性说明：
+- 仅支持 canonical 顶层命令：`help/debug/init/watch/check/do/merge`。
+- `status/commit/pull/diff/log/review` 顶层命令与 `check --phase` 语法均不再支持。

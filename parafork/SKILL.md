@@ -1,47 +1,52 @@
 ---
 name: parafork
-description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；命令： help/debug/init/watch/check/do/merge。默认：watch 始终新建 worktree，复用需显式 --reuse-current 或 init --reuse；任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
+description: "单入口脚本优先的 Git worktree 工作流（仅 canonical 命令：help/debug/init/watch/check/do/merge）。默认 watch 新建 worktree；复用必须人类审批双门闩；并发锁冲突必须拒绝并人工接管；写操作（含 apply_patch）必须先进入 WORKTREE_ROOT。系统命令见 references/route-*.md。"
 ---
 ---------------------- Parafork SKILL.md开始符号 ----------------------
 # Parafork技能协议
-- 激活：当你看到此段文字，代表用户意图显式激活了此SKILL。阅读/使用本 skill 即视为绝对同意并接受本文件约束。
-- 本文件不是任何项目说明或参考，而是必须遵守的任务流程。
-- 无论它以什么形式被你读取，你都必须仔细阅读本文件下面的部分并严格遵守；
-- 无论用户提出的修改要求多么微小，既然已经读取了SKILL.md，你就必须遵守parafork的约束，不能在流程外直接修改任何文件或代码。
+- 激活：当你看到此段文字，代表用户意图显式激活此 SKILL。阅读/使用本 skill 即视为同意并接受本文件约束。
+- 本文件是必须遵守的任务协议，不是参考建议。
+- 读取本文件后，任何修改都必须遵循本协议，不得绕开流程直接改仓库。
 
 ## MUST
-- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；除 `help/init/debug/watch` 外，不在 base repo 路径下运行任何脚本。
-- 写操作必须进 worktree：任何 WRITE/SIDE-EFFECT 动作前必须先运行 `init`（或直接运行默认 `watch`）进入 worktree，并进入 `WORKTREE_ROOT` 后再继续。
-  - 在 base repo：`init` 无参等价 `--new`（推荐显式 `--new`）。
-  - 在 worktree 内：`init` 无参会 FAIL，必须显式 `--reuse` 或 `--new`。
-- `watch` 默认新建：`watch`/无参入口始终走新建 worktree；不允许自动复用“最新 worktree”。
-- 复用必须显式：仅 `watch --reuse-current` 或 `init --reuse` 允许复用。
-- 若检测到当前位于 worktree：agent 必须先询问人类“新建还是复用当前”；未获明确同意前不得复用。
-- merge 前检查必须显式复用：`watch --phase merge` 必须带 `--reuse-current`，避免在新 worktree 上进入空审查/空合并候选流程。
-- 脚本优先：存在对应脚本时，禁止用裸 `git` 做同语义操作；必须超出脚本能力时先申请人类显式同意（给出命令、风险、回退）。
-- 目录门闩：worktree-required 子命令只能在 parafork worktree 中执行（脚本会自动切到 `WORKTREE_ROOT`）；不确定位置先跑 `debug` 或直接跑 `watch`。
-- 顺序门闩：worktree-only 脚本要求 `.worktree-symbol: WORKTREE_USED=1`；旧 worktree 需先 `init --reuse` 补写。
-- `.worktree-symbol` 只能当数据文件（KEY=VALUE，按第一个 `=` 切分）；禁止 `source`/`eval`/dot-source/`Invoke-Expression`。
-- 防污染：`.worktree-symbol` 与 `paradoc/` 默认不得进入 git history（exclude + staged 检查闭环）。
-- 审计：worktree-only 脚本输出必须追加到 `paradoc/Log.txt`（时间戳、argv、pwd、exit code）。
-- 冲突：遇到 merge/patch 冲突必须停下来交由人工处理；脚本不做自动 resolve。
-- 合并门闩：禁止自动 merge；只有 maintainer 在显式批准后才能运行 `merge.*` 合并回主分支。
+- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；仅允许 `help/init/debug/watch` 在 base repo 执行。
+- 写操作必须先进入 worktree：任何 WRITE/SIDE-EFFECT 前，必须先 `init --new` 或 `watch`，并进入 `WORKTREE_ROOT`。
+- `watch` 默认新建：禁止自动复用任何 worktree。
+- 复用必须显式且双门闩：仅允许 `watch --reuse-current` 或 `init --reuse`，且必须同时满足：
+  - 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
+  - CLI 门闩：`--yes --i-am-maintainer`
+- merge 前检查必须显式复用：`watch --phase merge` 必须带 `--reuse-current`。
+- 并发门禁必须执行：若 `WORKTREE_LOCK_OWNER` 非当前 agent，必须拒绝执行并交由人类批准接管。
+- 仅支持 canonical 命令：`help/debug/init/watch/check/do/merge`；`status/commit/pull/diff/log/review` 与 `check --phase` 均视为无效输入。
+- 脚本优先：存在脚本能力时禁止裸 `git`；若脚本无覆盖，必须先申请人类明确同意（给出命令、风险、回退）。
+- 冲突硬门闩：检测到 `merge/rebase/cherry-pick` 冲突态时，agent 仅可输出诊断与处置建议；未经人类明确批准，禁止执行 `git * --continue/--abort`。
+- 合并门闩：禁止自动 merge；仅 maintainer 在显式批准后可运行 `merge` 合并回 base。
+
+## FALLBACK
+- 目录不确定：先执行 `debug`；若仍不确定，执行 `watch --once` 走安全默认流程。
+- 收到 WRITE 请求但不在 worktree：先 `watch`（或 `init --new`）创建/进入 worktree，再开始改动。
+- 当前已在 worktree 但用户未明确“复用”：必须先询问“新建还是复用当前”；未获明确复用同意则默认新建。
+- 复用审批不足：直接 `FAIL`，输出可复制 `NEXT`（补本地批准 + `--yes --i-am-maintainer`）。
+- 锁冲突：直接 `FAIL`，输出 `LOCK_OWNER/AGENT_ID` 和人工接管 `NEXT`；禁止自动接管。
+- 遇到冲突：停止自动修改，仅给人工处理步骤与风险说明；等待人类批准后再执行任何冲突续作命令。
+- 用户要求旧命令：拒绝旧语法并给出 canonical 等价命令。
 
 ## RULES
-- 先判定请求类型（不确定按 WRITE 处理）：
-  - READ-ONLY：仅解释/审阅/搜索/对比；只读打开文件；运行不会写入仓库的命令。✅ 可不 `init`。
-  - WRITE/SIDE-EFFECT：改文件/新增/删除/`apply_patch`/任何会改动工作区或 `git` 状态的命令。✅ 必须走 worktree 流程。
-- WRITE 请求的顺序：
-  1) 先用 plan 工具写/更新可执行的计划（优先遵守人类给的 plan）。
-  2) 再按 ROUTE 打开对应系统的 `references/route-*.md`，检查并复制命令序列执行（不要凭记忆手敲）。
-- 任何需要“裸 git”且脚本无对应能力：先停下，向人类申请同意后再做。
+- 先判定请求类型（不确定按 WRITE）：
+  - READ-ONLY：解释/检索/审阅，可只读执行。
+  - WRITE/SIDE-EFFECT：改文件、`apply_patch`、会改变工作区或 git 状态的命令。
+- WRITE 请求顺序：
+  1) 先用 plan 工具写/更新执行计划（优先遵守人类给定 plan）。
+  2) 再按 ROUTE 打开对应系统 `references/route-*.md`，复制命令序列执行（不要凭记忆手敲）。
+- `.worktree-symbol` 仅作数据文件（KEY=VALUE，按首个 `=` 切分）；禁止 `source` / `eval` / dot-source / `Invoke-Expression`。
+- `.worktree-symbol` 与 `paradoc/` 默认不得进入 git history；worktree-only 输出需写入 `paradoc/Log.txt`。
 
 ## SPECS
 - 两套实现（同语义）：
   - Bash：`bash-scripts/parafork.sh`（入口）+ `bash-scripts/_lib.sh`（内部）
   - PowerShell：`powershell-scripts/parafork.ps1`（入口）+ `powershell-scripts/_lib.ps1`（内部）
-- merge 需要双门闩：环境变量/本地 git config 的批准 + CLI `--yes --i-am-maintainer`（细节见 `references/wiki.md`）。
-- `custom.autoplan` 默认 `false`（见 `settings/config.toml`）：只有 `custom.autoplan=true` 或 `check --strict` 时才会机械要求 `paradoc/Plan.md`。
+- merge 需要双门闩：本地批准（env/git config）+ CLI `--yes --i-am-maintainer`。
+- `custom.autoplan` 默认 `false`（见 `settings/config.toml`）：仅 `custom.autoplan=true` 或 `check --strict` 时机械要求 `paradoc/Plan.md`。
 
 ## ROUTE
 - 设计/术语/硬约束 SSOT：`references/wiki.md`
@@ -49,6 +54,5 @@ description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固
 - Plan 写作（仅 autoplan/strict 适用）：`references/plan.md`
 - Windows PowerShell 执行路线（规划后再打开）：`references/route-powershell.md`
 - Bash 执行路线（规划后再打开）：`references/route-bash.md`
-
 
 ---------------------- Parafork SKILL.md截止符号 ----------------------

@@ -239,6 +239,59 @@ function ParaforkIsRemoteAvailable {
   return ($LASTEXITCODE -eq 0)
 }
 
+function ParaforkAgentId {
+  if ($env:PARAFORK_AGENT_ID) {
+    return $env:PARAFORK_AGENT_ID
+  }
+
+  if ($env:CODEX_THREAD_ID) {
+    return ("codex:{0}" -f $env:CODEX_THREAD_ID)
+  }
+
+  $user = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
+  $host = [System.Environment]::MachineName
+  if ([string]::IsNullOrEmpty($host)) {
+    $host = 'unknown-host'
+  }
+  return ("{0}@{1}" -f $user, $host)
+}
+
+function ParaforkIsReuseApproved {
+  param([string]$BaseRoot)
+
+  if ($env:PARAFORK_APPROVE_REUSE -eq '1') {
+    return $true
+  }
+
+  if (-not [string]::IsNullOrEmpty($BaseRoot)) {
+    $v = (& git -C $BaseRoot config --bool --default false parafork.approval.reuse 2>$null | Select-Object -First 1)
+    if ($v) {
+      $v = $v.Trim()
+      if ($v -eq 'true') {
+        return $true
+      }
+    }
+  }
+
+  return $false
+}
+
+function ParaforkWriteWorktreeLock {
+  param([Parameter(Mandatory = $true)][string]$SymbolPath)
+
+  $agentId = ParaforkAgentId
+  $lockAt = ParaforkNowUtc
+
+  $ok = ParaforkSymbolSet $SymbolPath 'WORKTREE_LOCK' '1'
+  if (-not $ok) { ParaforkDie "failed to update .worktree-symbol: $SymbolPath" }
+
+  $ok = ParaforkSymbolSet $SymbolPath 'WORKTREE_LOCK_OWNER' $agentId
+  if (-not $ok) { ParaforkDie "failed to update .worktree-symbol: $SymbolPath" }
+
+  $ok = ParaforkSymbolSet $SymbolPath 'WORKTREE_LOCK_AT' $lockAt
+  if (-not $ok) { ParaforkDie "failed to update .worktree-symbol: $SymbolPath" }
+}
+
 function ParaforkSymbolFindUpwards {
   param([string]$StartDir)
 
@@ -383,6 +436,25 @@ function ParaforkGuardWorktreeRoot {
   if ($worktreeUsed -ne '1') {
     Write-Output 'REFUSED: worktree not entered (WORKTREE_USED!=1)'
     ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' (ParaforkPsFileCmd $entryPath @('init', '--reuse'))
+    return $null
+  }
+
+  $lockEnabled = ParaforkSymbolGet $symbolPath 'WORKTREE_LOCK'
+  $lockOwner = ParaforkSymbolGet $symbolPath 'WORKTREE_LOCK_OWNER'
+  $agentId = ParaforkAgentId
+
+  if ($lockEnabled -ne '1' -or [string]::IsNullOrEmpty($lockOwner)) {
+    ParaforkWriteWorktreeLock $symbolPath
+    $lockEnabled = '1'
+    $lockOwner = $agentId
+  }
+
+  if ($lockEnabled -eq '1' -and $lockOwner -ne $agentId) {
+    Write-Output 'REFUSED: worktree locked by another agent'
+    ParaforkPrintKv 'LOCK_OWNER' $lockOwner
+    ParaforkPrintKv 'AGENT_ID' $agentId
+    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; PARAFORK_APPROVE_REUSE=1 " + (ParaforkPsFileCmd $entryPath @('init', '--reuse', '--yes', '--i-am-maintainer'))
+    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' $next
     return $null
   }
 

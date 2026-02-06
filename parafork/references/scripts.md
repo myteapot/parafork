@@ -11,7 +11,7 @@
 - `parafork help`
 - `parafork debug`
 - `parafork init [--new|--reuse] ...`
-- `parafork watch [--new|--reuse-current] ...`（默认命令；无参等价 `watch`，默认新建）
+- `parafork watch [--new|--reuse-current] [--yes --i-am-maintainer] ...`（默认命令；无参等价 `watch`，默认新建）
 
 ## worktree-required（必须在 parafork worktree 中；脚本会自动切到 WORKTREE_ROOT）
 - `parafork check [topic] ...`
@@ -22,11 +22,12 @@
   - `do pull [--strategy ff-only|rebase|merge] ...`
 - `parafork merge ...`（仅 maintainer；需双门闩）
 
-## Legacy（弃用兼容；不在 help 展示；stderr 打印 DEPRECATED）
-- `status` → `check status`
-- `check --phase <phase>` → `check <phase>`
-- `commit` → `do commit`
-- `pull` → `do pull`
-- `diff` → `check diff`
-- `log` → `check log`
-- `review` → `check review`
+## 复用审批与并发门禁
+- 复用审批（`init --reuse` / `watch --reuse-current`）需要双门闩：
+  - 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
+  - CLI 门闩：`--yes --i-am-maintainer`
+- worktree 并发门禁通过 `.worktree-symbol` 中 `WORKTREE_LOCK*` 字段执行；锁冲突时脚本会拒绝并要求人工接管。
+
+## 兼容性
+- 仅支持 canonical 顶层命令：`help/debug/init/watch/check/do/merge`。
+- `status/commit/pull/diff/log/review` 顶层命令与 `check --phase` 语法均不再支持。

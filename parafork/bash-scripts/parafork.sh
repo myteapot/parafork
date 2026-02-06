@@ -29,7 +29,7 @@ Commands:
   help
   debug
   init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
-  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]
+  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]
   check [topic] [args...]
   do <action> [args...]
   merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
@@ -47,18 +47,11 @@ do actions:
   commit --message "<msg>" [--no-check]
   pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
-Compatibility (deprecated but supported):
-  status, check --phase <phase>, commit, pull, diff, log, review
-
 Notes:
   - Default (no cmd): watch
-  - watch defaults to creating a new worktree; use --reuse-current for explicit reuse.
+  - watch defaults to creating a new worktree; reuse needs approval + --yes --i-am-maintainer.
   - watch does not auto-commit/merge; it only prints NEXT when safe.
 EOF
-}
-
-parafork_deprecated() {
-  echo "DEPRECATED: $1 -> $2" >&2
 }
 
 cmd_help() {
@@ -199,7 +192,7 @@ Entry behavior:
 
 Options:
   --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1)
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
   --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
   --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
   --no-remote              Force REMOTE_NAME empty for this session
@@ -261,9 +254,21 @@ EOF
   fi
 
   if [[ "$mode" == "reuse" ]]; then
-    if [[ -n "$base_branch_override" || -n "$remote_override" || "$no_remote" == "true" || "$no_fetch" == "true" || "$yes" == "true" || "$iam" == "true" ]]; then
+    if [[ -n "$base_branch_override" || -n "$remote_override" || "$no_remote" == "true" || "$no_fetch" == "true" ]]; then
       parafork_die "--reuse cannot be combined with worktree creation options"
     fi
+
+    if [[ -z "$symbol_base_root" ]]; then
+      parafork_die "missing BASE_ROOT in .worktree-symbol: $symbol_path"
+    fi
+
+    if ! parafork_is_reuse_approved "$symbol_base_root"; then
+      echo "REFUSED: worktree reuse requires maintainer approval"
+      parafork_print_output_block "${symbol_worktree_id:-UNKNOWN}" "$invocation_pwd" "FAIL" "set PARAFORK_APPROVE_REUSE=1 (or git -C \"$symbol_base_root\" config parafork.approval.reuse true) and rerun: $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+      return 1
+    fi
+
+    parafork_require_yes_i_am_maintainer_for_flag "--reuse" "$yes" "$iam"
 
     local worktree_id worktree_root
     worktree_id="${symbol_worktree_id:-UNKNOWN}"
@@ -271,6 +276,7 @@ EOF
     [[ -n "$worktree_root" ]] || parafork_die "missing WORKTREE_ROOT in .worktree-symbol: $symbol_path"
 
     parafork_symbol_set "$symbol_path" "WORKTREE_USED" "1"
+    parafork_write_worktree_lock "$symbol_path"
 
     init_reuse_body() {
       echo "MODE=reuse"
@@ -413,6 +419,9 @@ WORKTREE_ROOT=$worktree_root
 WORKTREE_BRANCH=$worktree_branch
 WORKTREE_START_POINT=$worktree_start_point
 WORKTREE_USED=1
+WORKTREE_LOCK=1
+WORKTREE_LOCK_OWNER=$(parafork_agent_id)
+WORKTREE_LOCK_AT=$created_at
 BASE_BRANCH=$base_branch
 REMOTE_NAME=$remote_name
 REMOTE_AUTOSYNC=$remote_autosync
@@ -761,7 +770,6 @@ cmd_check_plan() {
 cmd_check() {
   local strict="false"
   local topic="exec"
-  local phase=""
   local seen_topic="false"
   local -a rest=()
 
@@ -770,11 +778,6 @@ cmd_check() {
       --strict)
         strict="true"
         shift
-        ;;
-      --phase)
-        phase="${2:-}"
-        [[ -n "$phase" ]] || parafork_die "missing value for --phase"
-        shift 2
         ;;
       -h|--help)
         cat <<EOF
@@ -788,9 +791,6 @@ Topics:
   diff
   log [--limit <n>]
   review
-
-Legacy (deprecated):
-  check --phase plan|exec|merge [--strict]
 EOF
         exit 0
         ;;
@@ -805,18 +805,6 @@ EOF
         ;;
     esac
   done
-
-  if [[ -n "$phase" ]]; then
-    if [[ "$seen_topic" == "true" ]]; then
-      parafork_die "cannot combine positional topic and --phase"
-    fi
-    case "$phase" in
-      plan|exec|merge) ;;
-      *) parafork_die "invalid --phase: $phase" ;;
-    esac
-    parafork_deprecated "check --phase $phase" "check $phase"
-    topic="$phase"
-  fi
 
   case "$topic" in
     exec) cmd_check_exec "$strict" "${rest[@]}" ;;
@@ -1069,36 +1057,6 @@ EOF
     pull) cmd_do_pull "$@" ;;
     *) parafork_die "unknown action: $action" ;;
   esac
-}
-
-cmd_status() {
-  parafork_deprecated "status" "check status"
-  cmd_check status "$@"
-}
-
-cmd_diff() {
-  parafork_deprecated "diff" "check diff"
-  cmd_check diff "$@"
-}
-
-cmd_log() {
-  parafork_deprecated "log" "check log"
-  cmd_check log "$@"
-}
-
-cmd_review() {
-  parafork_deprecated "review" "check review"
-  cmd_check review "$@"
-}
-
-cmd_commit() {
-  parafork_deprecated "commit" "do commit"
-  cmd_do commit "$@"
-}
-
-cmd_pull() {
-  parafork_deprecated "pull" "do pull"
-  cmd_do pull "$@"
 }
 
 cmd_check_diff() {
@@ -1388,6 +1346,8 @@ cmd_watch() {
   local phase="exec"
   local force_new="false"
   local reuse_current="false"
+  local yes="false"
+  local iam="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1411,9 +1371,17 @@ cmd_watch() {
         reuse_current="true"
         shift
         ;;
+      --yes)
+        yes="true"
+        shift
+        ;;
+      --i-am-maintainer)
+        iam="true"
+        shift
+        ;;
       -h|--help)
         cat <<EOF
-Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]
+Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]
 EOF
         exit 0
         ;;
@@ -1436,6 +1404,10 @@ EOF
     parafork_die "--new and --reuse-current are mutually exclusive"
   fi
 
+  if [[ "$reuse_current" != "true" && ("$yes" == "true" || "$iam" == "true") ]]; then
+    parafork_die "--yes/--i-am-maintainer only valid with --reuse-current"
+  fi
+
   if [[ "$phase" == "merge" && "$reuse_current" != "true" ]]; then
     echo "REFUSED: watch --phase merge requires explicit --reuse-current"
     parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD watch --phase merge --once --reuse-current"
@@ -1453,6 +1425,23 @@ EOF
     if [[ "$parafork_worktree" == "1" ]]; then
       in_worktree="true"
     fi
+  fi
+
+  if [[ "$reuse_current" == "true" ]]; then
+    local approve_base=""
+    if [[ "$in_worktree" == "true" ]]; then
+      approve_base="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
+    else
+      approve_base="$(parafork_git_toplevel || true)"
+    fi
+
+    if [[ -z "$approve_base" ]] || ! parafork_is_reuse_approved "$approve_base"; then
+      echo "REFUSED: worktree reuse requires maintainer approval"
+      parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "set PARAFORK_APPROVE_REUSE=1 (or git -C \"<BASE_ROOT>\" config parafork.approval.reuse true) and rerun: $ENTRY_CMD watch --reuse-current --yes --i-am-maintainer"
+      exit 1
+    fi
+
+    parafork_require_yes_i_am_maintainer_for_flag "--reuse-current" "$yes" "$iam"
   fi
 
   if [[ "$reuse_current" == "true" ]]; then
@@ -1474,7 +1463,7 @@ EOF
     local used
     used="$(parafork_symbol_get "$worktree_root/.worktree-symbol" "WORKTREE_USED" || true)"
     if [[ "$used" != "1" ]]; then
-      cmd_init --reuse
+      cmd_init --reuse --yes --i-am-maintainer
       cd "$worktree_root"
     fi
   else
@@ -1582,14 +1571,8 @@ case "$cmd" in
   debug) cmd_debug "$@" ;;
   init) cmd_init "$@" ;;
   watch) cmd_watch "$@" ;;
-  status) cmd_status "$@" ;;
   check) cmd_check "$@" ;;
   do) cmd_do "$@" ;;
-  commit) cmd_commit "$@" ;;
-  pull) cmd_pull "$@" ;;
-  diff) cmd_diff "$@" ;;
-  log) cmd_log "$@" ;;
-  review) cmd_review "$@" ;;
   merge) cmd_merge "$@" ;;
   *)
     echo "ERROR: unknown command: $cmd"

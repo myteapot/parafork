@@ -24,7 +24,7 @@ Commands:
   help
   debug
   init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
-  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]
+  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]
   check [topic] [args...]
   do <action> [args...]
   merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
@@ -42,22 +42,11 @@ do actions:
   commit --message "<msg>" [--no-check]
   pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
-Compatibility (deprecated but supported):
-  status, check --phase <phase>, commit, pull, diff, log, review
-
 Notes:
   - Default (no cmd): watch
-  - watch defaults to creating a new worktree; use --reuse-current for explicit reuse.
+  - watch defaults to creating a new worktree; reuse needs approval + --yes --i-am-maintainer.
   - watch does not auto-commit/merge; it only prints NEXT when safe.
 "@
-}
-
-function ParaforkDeprecated {
-  param(
-    [Parameter(Mandatory = $true)][string]$Old,
-    [Parameter(Mandatory = $true)][string]$New
-  )
-  [Console]::Error.WriteLine(("DEPRECATED: {0} -> {1}" -f $Old, $New))
 }
 
 function ParaforkWorkdirRoot {
@@ -185,6 +174,7 @@ function EnsureWorktreeUsed {
     if (-not $ok) {
       ParaforkDie "failed to update .worktree-symbol: $SymbolPath"
     }
+    ParaforkWriteWorktreeLock $SymbolPath
     Write-Output 'MODE=reuse'
     ParaforkPrintKv 'WORKTREE_USED' '1'
   }
@@ -323,6 +313,9 @@ function InitNewWorktree {
       ("WORKTREE_BRANCH={0}" -f $worktreeBranch)
       ("WORKTREE_START_POINT={0}" -f $worktreeStartPoint)
       'WORKTREE_USED=1'
+      'WORKTREE_LOCK=1'
+      ("WORKTREE_LOCK_OWNER={0}" -f (ParaforkAgentId))
+      ("WORKTREE_LOCK_AT={0}" -f $createdAt)
       ("BASE_BRANCH={0}" -f $baseBranch)
       ("REMOTE_NAME={0}" -f $remoteName)
       ("REMOTE_AUTOSYNC={0}" -f $remoteAutosync)
@@ -748,7 +741,7 @@ Usage: $ENTRY_CMD init [--new|--reuse] [options]
 
 Options:
   --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1)
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
   --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
   --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
   --no-remote              Force REMOTE_NAME empty for this session
@@ -764,7 +757,7 @@ Usage: $ENTRY_CMD init [--new|--reuse] [options]
 
 Options:
   --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1)
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
   --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
   --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
   --no-remote              Force REMOTE_NAME empty for this session
@@ -828,9 +821,23 @@ Options:
   }
 
   if ($mode -eq 'reuse') {
-    if ($baseBranchOverride -or $remoteOverride -or $noRemote -or $noFetch -or $yes -or $iam) {
+    if ($baseBranchOverride -or $remoteOverride -or $noRemote -or $noFetch) {
       ParaforkDie '--reuse cannot be combined with worktree creation options'
     }
+
+    if ([string]::IsNullOrEmpty($symbolBaseRoot)) {
+      ParaforkDie "missing BASE_ROOT in .worktree-symbol: $symbolPath"
+    }
+
+    if (-not (ParaforkIsReuseApproved $symbolBaseRoot)) {
+      Write-Output 'REFUSED: worktree reuse requires maintainer approval'
+      $reuseWorktreeId = if ([string]::IsNullOrEmpty($symbolWorktreeId)) { 'UNKNOWN' } else { $symbolWorktreeId }
+      $next = "set PARAFORK_APPROVE_REUSE=1 (or git -C " + (ParaforkQuotePs $symbolBaseRoot) + " config parafork.approval.reuse true) and rerun: " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
+      ParaforkPrintOutputBlock $reuseWorktreeId $invocationPwd 'FAIL' $next
+      return 1
+    }
+
+    ParaforkRequireYesIam '--reuse' $yes $iam
 
     $worktreeId = $symbolWorktreeId
     if ([string]::IsNullOrEmpty($worktreeId)) {
@@ -975,7 +982,6 @@ function CmdCheck {
   $strict = $false
   $topic = $null
   $topicProvided = $false
-  $phase = $null
   $rest = @()
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
@@ -984,14 +990,6 @@ function CmdCheck {
       '--strict' {
         $strict = $true
         $i++
-        continue
-      }
-      '--phase' {
-        if ($i + 1 -ge $CmdArgs.Count) {
-          ParaforkDie 'missing value for --phase'
-        }
-        $phase = $CmdArgs[$i + 1]
-        $i += 2
         continue
       }
       '--help' {
@@ -1006,9 +1004,6 @@ Topics:
   diff
   log [--limit <n>]
   review
-
-Legacy (deprecated):
-  check --phase plan|exec|merge [--strict]
 ")
         return 0
       }
@@ -1033,17 +1028,6 @@ Usage: $ENTRY_CMD check [topic] [args...]
 
   if (-not $topicProvided -or [string]::IsNullOrEmpty($topic)) {
     $topic = 'exec'
-  }
-
-  if ($phase) {
-    if ($topicProvided) {
-      ParaforkDie 'cannot combine positional topic and --phase'
-    }
-    if ($phase -ne 'plan' -and $phase -ne 'exec' -and $phase -ne 'merge') {
-      ParaforkDie ("invalid --phase: {0}" -f $phase)
-    }
-    ParaforkDeprecated ("check --phase {0}" -f $phase) ("check {0}" -f $phase)
-    $topic = $phase
   }
 
   switch ($topic) {
@@ -1404,42 +1388,6 @@ Actions:
   }
 }
 
-function CmdStatus {
-  param([string[]]$CmdArgs = @())
-  ParaforkDeprecated 'status' 'check status'
-  return (CmdCheck (@('status') + $CmdArgs))
-}
-
-function CmdDiff {
-  param([string[]]$CmdArgs = @())
-  ParaforkDeprecated 'diff' 'check diff'
-  return (CmdCheck (@('diff') + $CmdArgs))
-}
-
-function CmdLog {
-  param([string[]]$CmdArgs = @())
-  ParaforkDeprecated 'log' 'check log'
-  return (CmdCheck (@('log') + $CmdArgs))
-}
-
-function CmdReview {
-  param([string[]]$CmdArgs = @())
-  ParaforkDeprecated 'review' 'check review'
-  return (CmdCheck (@('review') + $CmdArgs))
-}
-
-function CmdCommit {
-  param([string[]]$CmdArgs = @())
-  ParaforkDeprecated 'commit' 'do commit'
-  return (CmdDo (@('commit') + $CmdArgs))
-}
-
-function CmdPull {
-  param([string[]]$CmdArgs = @())
-  ParaforkDeprecated 'pull' 'do pull'
-  return (CmdDo (@('pull') + $CmdArgs))
-}
-
 function CmdCheckDiff {
   $guard = ParaforkGuardWorktree
   if (-not $guard) {
@@ -1779,6 +1727,8 @@ function CmdWatch {
   $phase = 'exec'
   $forceNew = $false
   $reuseCurrent = $false
+  $yes = $false
+  $iam = $false
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
@@ -1798,12 +1748,14 @@ function CmdWatch {
       }
       '--new' { $forceNew = $true; $i++; continue }
       '--reuse-current' { $reuseCurrent = $true; $i++; continue }
+      '--yes' { $yes = $true; $i++; continue }
+      '--i-am-maintainer' { $iam = $true; $i++; continue }
       '--help' {
-        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]"
+        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]"
         return 0
       }
       '-h' {
-        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]"
+        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]"
         return 0
       }
       default { ParaforkDie ("unknown arg: {0}" -f $a) }
@@ -1821,6 +1773,10 @@ function CmdWatch {
     ParaforkDie '--new and --reuse-current are mutually exclusive'
   }
 
+  if (-not $reuseCurrent -and ($yes -or $iam)) {
+    ParaforkDie '--yes/--i-am-maintainer only valid with --reuse-current'
+  }
+
   if ($phase -eq 'merge' -and -not $reuseCurrent) {
     Write-Output 'REFUSED: watch --phase merge requires explicit --reuse-current'
     ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current'))
@@ -1835,6 +1791,18 @@ function CmdWatch {
     if ((ParaforkSymbolGet $symbolPath 'PARAFORK_WORKTREE') -eq '1') {
       $inWorktree = $true
     }
+  }
+
+  if ($reuseCurrent) {
+    $approveBase = if ($inWorktree) { ParaforkSymbolGet $symbolPath 'BASE_ROOT' } else { ParaforkGitToplevel }
+    if ([string]::IsNullOrEmpty($approveBase) -or -not (ParaforkIsReuseApproved $approveBase)) {
+      Write-Output 'REFUSED: worktree reuse requires maintainer approval'
+      $next = "set PARAFORK_APPROVE_REUSE=1 (or git -C <BASE_ROOT> config parafork.approval.reuse true) and rerun: " + (ParaforkEntryCmd @('watch', '--reuse-current', '--yes', '--i-am-maintainer'))
+      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' $next
+      return 1
+    }
+
+    ParaforkRequireYesIam '--reuse-current' $yes $iam
   }
 
   if ($reuseCurrent) {
@@ -1960,14 +1928,8 @@ try {
     'debug' { CmdDebug }
     'init' { CmdInit $argv }
     'watch' { CmdWatch $argv }
-    'status' { CmdStatus $argv }
     'check' { CmdCheck $argv }
     'do' { CmdDo $argv }
-    'commit' { CmdCommit $argv }
-    'pull' { CmdPull $argv }
-    'diff' { CmdDiff $argv }
-    'log' { CmdLog $argv }
-    'review' { CmdReview $argv }
     'merge' { CmdMerge $argv }
     default {
       Write-Output ("ERROR: unknown command: {0}" -f $cmd)
