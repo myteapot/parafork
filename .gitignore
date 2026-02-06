@@ -1,0 +1,5 @@
+# Runtime worktree artifacts
+/.parafork/
+
+# Local dev-only materials (not for release package)
+/dev/

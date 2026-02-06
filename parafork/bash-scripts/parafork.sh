@@ -6,1031 +6,492 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
 
 INVOCATION_PWD="$(pwd -P)"
-ENTRY_CMD="bash \"$SCRIPT_DIR/parafork.sh\""
+ENTRY_PATH="$SCRIPT_DIR/parafork.sh"
+ENTRY_CMD="$(pf_entry_cmd "$ENTRY_PATH")"
+CONFIG_PATH="$(pf_root_dir)/settings/config.toml"
+LAST_INIT_ROOT=""
+WT_ID=""
+WT_ROOT=""
+WT_BASE=""
+WT_SYMBOL=""
 
-PARAFORK_LAST_INIT_WORKTREE_ROOT=""
-
-parafork_usage_init() {
-  cat <<EOF
-Usage: $ENTRY_CMD init [--new|--reuse] [options]
-
-Entry behavior:
-  - In base repo: no args defaults to --new
-  - Inside a worktree: no args FAIL (must choose --reuse or --new)
-
-Options:
-  --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires --yes --i-am-maintainer)
-  --yes                    Confirmation gate for risky flags
-  --i-am-maintainer        Confirmation gate for risky flags
-EOF
-}
-
-parafork_usage_check() {
-  cat <<EOF
-Usage: $ENTRY_CMD check [topic] [args...]
-
-Topics:
-  merge [--strict]
-  status    (default)
-EOF
-}
-
-parafork_usage_do() {
-  cat <<EOF
-Usage: $ENTRY_CMD do <action> [args...]
-
-Actions:
-  exec [--strict]
-  commit --message "<msg>" [--no-check]
-EOF
-}
-
-parafork_usage_do_exec() {
-  cat <<EOF
-Usage: $ENTRY_CMD do exec [--strict]
-EOF
-}
-
-parafork_usage_do_commit() {
-  cat <<EOF
-Usage: $ENTRY_CMD do commit --message "<msg>" [--no-check]
-EOF
-}
-
-parafork_usage_merge() {
-  cat <<EOF
-Usage: $ENTRY_CMD merge [options]
-
-Preview-only unless CLI gate is satisfied:
-- CLI gate: --yes --i-am-maintainer
-
-Options:
-  --message "<msg>"          Override merge commit message (squash mode)
-EOF
-}
-
-parafork_fallback_output_block() {
+fallback() {
   local code="$1"
-  if [[ "$code" -ne 0 && "${PARAFORK_OUTPUT_BLOCK_PRINTED:-0}" != "1" ]]; then
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help --debug"
+  if [[ "$code" -ne 0 && "${PF_OUTPUT_PRINTED:-0}" != "1" ]]; then
+    pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help --debug"
   fi
 }
+trap 'fallback $?' EXIT
 
-trap 'parafork_fallback_output_block $?' EXIT
+cfg_str() { pf_toml_get_str "$CONFIG_PATH" "$1" "$2" "$3"; }
+cfg_bool() { pf_toml_get_bool "$CONFIG_PATH" "$1" "$2" "$3"; }
+base_branch() { cfg_str base branch main; }
+workdir_root() { cfg_str workdir root .parafork; }
+workdir_rule() { cfg_str workdir rule '{YYMMDD}-{HEX4}'; }
+autoplan() { cfg_bool custom autoplan false; }
+autoformat() { cfg_bool custom autoformat true; }
+squash_mode() { cfg_bool control squash true; }
 
-parafork_usage() {
-  cat <<EOF
-
-Parafork — safe worktree contribution workflow (single entry)
-
-Usage:
-  $ENTRY_CMD [cmd] [args...]
-
+usage_main() {
+  cat <<TXT
+Parafork proposed (minimal)
+Usage: $ENTRY_CMD [cmd] [args...]
 Commands:
   help [debug|--debug]
   init [--new|--reuse] [--yes] [--i-am-maintainer]
-  do <action> [args...]
-  check [topic] [args...]
-  merge [--message "<msg>"] [--yes] [--i-am-maintainer]
+  do <exec|commit>
+  check [status|merge]
+  merge [--yes] [--i-am-maintainer]
+Default: no args => init --new + do exec
+TXT
+}
+usage_init() { echo "Usage: $ENTRY_CMD init [--new|--reuse] [--yes] [--i-am-maintainer]"; }
+usage_check() { echo "Usage: $ENTRY_CMD check [status|merge] [--strict]"; }
+usage_do() { echo "Usage: $ENTRY_CMD do <exec|commit>"; }
+usage_exec() { echo "Usage: $ENTRY_CMD do exec [--strict]"; }
+usage_commit() { echo "Usage: $ENTRY_CMD do commit --message \"<msg>\" [--no-check]"; }
+usage_merge() {
+  cat <<TXT
+Usage: $ENTRY_CMD merge [--yes] [--i-am-maintainer]
+CLI gate: --yes --i-am-maintainer
+TXT
+}
 
-check topics:
-  merge [--strict]
-  status    (default)
+wt_container() { local base="$1"; echo "$base/$(workdir_root)"; }
+list_wt_newest() {
+  local base="$1" dir
+  dir="$(wt_container "$base")"
+  [[ -d "$dir" ]] || return 0
+  while IFS= read -r d; do [[ -f "$d/.worktree-symbol" ]] && echo "$d"; done < <(ls -1dt "$dir"/* 2>/dev/null || true)
+}
 
-do actions:
-  exec [--strict]
-  commit --message "<msg>" [--no-check]
+guard_conflict() {
+  local repo="$1" wid="$2" pwd_now="$3"
+  if pf_in_conflict_state "$repo"; then
+    echo "REFUSED: repository in conflict state (merge/rebase/cherry-pick)"
+    pf_print_output_block "$wid" "$pwd_now" "FAIL" "diagnose conflicts and request human approval before continuing"
+    return 1
+  fi
+  return 0
+}
 
-Notes:
-  - Default (no cmd): init --new + do exec
-  - init handles worktree lifecycle (new/reuse)
-  - do exec performs status+check and prints NEXT
-EOF
+guard_worktree() {
+  local pwd_now symbol pf_wt used lock owner aid safe takeover
+  pwd_now="$(pwd -P)"
+  symbol="$(pf_symbol_find_upwards "$pwd_now" 2>/dev/null || true)"
+  WT_ID=""; WT_ROOT=""; WT_BASE=""; WT_SYMBOL=""
+  if [[ -z "$symbol" ]]; then
+    if pf_git_toplevel >/dev/null 2>&1; then
+      pf_print_output_block "UNKNOWN" "$pwd_now" "FAIL" "$ENTRY_CMD help --debug"
+    else
+      pf_print_output_block "UNKNOWN" "$pwd_now" "FAIL" "cd <BASE_ROOT> && $ENTRY_CMD init --new"
+    fi
+    return 1
+  fi
+  pf_wt="$(pf_symbol_get "$symbol" PARAFORK_WORKTREE || true)"
+  [[ "$pf_wt" == "1" ]] || { pf_print_output_block "UNKNOWN" "$pwd_now" "FAIL" "$ENTRY_CMD help --debug"; return 1; }
+  WT_ID="$(pf_symbol_get "$symbol" WORKTREE_ID || true)"; [[ -n "$WT_ID" ]] || WT_ID="UNKNOWN"
+  WT_ROOT="$(pf_symbol_get "$symbol" WORKTREE_ROOT || true)"
+  WT_BASE="$(pf_symbol_get "$symbol" BASE_ROOT || true)"
+  WT_SYMBOL="$symbol"
+  [[ -n "$WT_ROOT" ]] || { pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "$ENTRY_CMD help --debug"; return 1; }
+  used="$(pf_symbol_get "$symbol" WORKTREE_USED || true)"
+  [[ "$used" == "1" ]] || { echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "$ENTRY_CMD init --reuse --yes --i-am-maintainer"; return 1; }
+  lock="$(pf_symbol_get "$symbol" WORKTREE_LOCK || true)"
+  owner="$(pf_symbol_get "$symbol" WORKTREE_LOCK_OWNER || true)"
+  aid="$(pf_agent_id)"
+  if [[ "$lock" != "1" || -z "$owner" ]]; then pf_write_worktree_lock "$symbol"; owner="$aid"; fi
+  if [[ "$owner" != "$aid" ]]; then
+    safe="$ENTRY_CMD init --new"
+    takeover="cd \"$WT_ROOT\" && $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+    echo "REFUSED: worktree locked by another agent"
+    pf_print_kv LOCK_OWNER "$owner"
+    pf_print_kv AGENT_ID "$aid"
+    pf_print_kv SAFE_NEXT "$safe"
+    pf_print_kv TAKEOVER_NEXT "$takeover"
+    pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "$safe"
+    return 1
+  fi
+  return 0
+}
+
+check_files() {
+  local phase="$1" strict="$2"
+  local root plan execf mergef logf ap af
+  root="$WT_ROOT"; [[ -n "$root" ]] || root="$(pwd -P)"
+  ap="$(autoplan)"; af="$(autoformat)"
+  [[ "$strict" == "true" ]] && ap="true" af="true"
+  plan="$root/paradoc/Plan.md"; execf="$root/paradoc/Exec.md"; mergef="$root/paradoc/Merge.md"; logf="$root/paradoc/Log.txt"
+  local -a errs=()
+  [[ -f "$execf" ]] || errs+=("missing file: $execf")
+  [[ -f "$mergef" ]] || errs+=("missing file: $mergef")
+  [[ -f "$logf" ]] || errs+=("missing file: $logf")
+  [[ "$ap" == "true" && ! -f "$plan" ]] && errs+=("missing file: $plan")
+  if [[ "$ap" == "true" && "$af" == "true" && -f "$plan" ]]; then
+    grep -Fq '## Milestones' "$plan" || errs+=("Plan.md missing heading: ## Milestones")
+    grep -Fq '## Tasks' "$plan" || errs+=("Plan.md missing heading: ## Tasks")
+    grep -Eq '^- \[.\] ' "$plan" || errs+=("Plan.md has no checkboxes")
+  fi
+  if [[ "$af" == "true" && -f "$mergef" ]]; then
+    grep -Ei 'Acceptance|Repro' "$mergef" >/dev/null || errs+=("Merge.md missing Acceptance/Repro section keywords")
+  fi
+  if [[ "$phase" == "merge" || "$strict" == "true" ]]; then
+    for f in "$execf" "$mergef"; do
+      [[ -f "$f" ]] && grep -Eq 'PARAFORK_TBD|TODO_TBD' "$f" && errs+=("placeholder remains: $f") || true
+    done
+    [[ "$ap" == "true" && -f "$plan" ]] && grep -Eq 'PARAFORK_TBD|TODO_TBD' "$plan" && errs+=("placeholder remains: $plan") || true
+  fi
+  if [[ "$phase" == "merge" ]]; then
+    git ls-files -- 'paradoc/' | grep -q . && errs+=("git pollution: tracked files under paradoc/") || true
+    git ls-files -- '.worktree-symbol' | grep -q . && errs+=("git pollution: .worktree-symbol is tracked") || true
+    git diff --cached --name-only -- | grep -E '^(paradoc/|\.worktree-symbol$)' >/dev/null && errs+=("git pollution: staged includes paradoc/ or .worktree-symbol") || true
+  fi
+  if [[ "${#errs[@]}" -gt 0 ]]; then
+    echo "CHECK_RESULT=FAIL"; local e; for e in "${errs[@]}"; do echo "FAIL: $e"; done; return 1
+  fi
+  echo "CHECK_RESULT=PASS"; return 0
+}
+
+print_status() {
+  local branch baseb wtb dirty untracked
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  baseb="$(pf_symbol_get "$WT_SYMBOL" BASE_BRANCH || true)"
+  wtb="$(pf_symbol_get "$WT_SYMBOL" WORKTREE_BRANCH || true)"
+  dirty="$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+  untracked="$(git status --porcelain | awk '/^\?\?/ {c++} END {print c+0}')"
+  pf_print_kv CURRENT_BRANCH "$branch"
+  pf_print_kv BASE_BRANCH "$baseb"
+  pf_print_kv WORKTREE_BRANCH "$wtb"
+  pf_print_kv TRACKED_DIRTY "$dirty"
+  pf_print_kv UNTRACKED_COUNT "$untracked"
+}
+
+print_review() {
+  local baseb wtb
+  baseb="$(pf_symbol_get "$WT_SYMBOL" BASE_BRANCH || true)"
+  wtb="$(pf_symbol_get "$WT_SYMBOL" WORKTREE_BRANCH || true)"
+  echo "### Review material"
+  echo "#### Commits ($baseb..$wtb)"
+  git log --oneline "$baseb..$wtb" || true
+  echo
+  echo "#### Files ($baseb...$wtb)"
+  git diff --name-status "$baseb...$wtb" || true
+}
+
+cmd_help_debug() {
+  local pwd_now symbol base dir safe takeover chosen cid
+  pwd_now="$(pwd -P)"
+  symbol="$(pf_symbol_find_upwards "$pwd_now" 2>/dev/null || true)"
+  if [[ -n "$symbol" ]]; then
+    local wid wroot body
+    wid="$(pf_symbol_get "$symbol" WORKTREE_ID || true)"; [[ -n "$wid" ]] || wid="UNKNOWN"
+    wroot="$(pf_symbol_get "$symbol" WORKTREE_ROOT || true)"
+    if [[ -n "$wroot" ]]; then
+      body() { pf_print_kv SYMBOL_PATH "$symbol"; pf_print_output_block "$wid" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD do exec"; }
+      pf_invoke_logged "$wroot" "parafork-proposed help --debug" "$ENTRY_CMD help --debug" body
+      return $?
+    fi
+    pf_print_kv SYMBOL_PATH "$symbol"; pf_print_output_block "$wid" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD do exec"; return 0
+  fi
+  base="$(pf_git_toplevel || true)"
+  [[ -n "$base" ]] || { pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"; pf_die "not in git repo and no .worktree-symbol found"; }
+  dir="$(wt_container "$base")"
+  if [[ ! -d "$dir" ]]; then
+    pf_print_kv BASE_ROOT "$base"; pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD init --new"; echo; echo "No worktree container found at: $dir"; return 0
+  fi
+  mapfile -t _roots < <(list_wt_newest "$base")
+  if [[ "${#_roots[@]}" -eq 0 ]]; then
+    pf_print_kv BASE_ROOT "$base"; pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD init --new"; echo; echo "No worktrees found under: $dir"; return 0
+  fi
+  echo "Found worktrees (newest first):"
+  local d wid
+  for d in "${_roots[@]}"; do wid="$(pf_symbol_get "$d/.worktree-symbol" WORKTREE_ID || true)"; [[ -n "$wid" ]] || wid="UNKNOWN"; echo "- $wid  $d"; done
+  chosen="${_roots[0]}"; cid="$(pf_symbol_get "$chosen/.worktree-symbol" WORKTREE_ID || true)"; [[ -n "$cid" ]] || cid="UNKNOWN"
+  safe="$ENTRY_CMD init --new"; takeover="cd \"$chosen\" && $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+  echo; pf_print_kv BASE_ROOT "$base"; pf_print_kv SAFE_NEXT "$safe"; pf_print_kv TAKEOVER_NEXT "$takeover"; pf_print_output_block "$cid" "$INVOCATION_PWD" "PASS" "$safe"
 }
 
 cmd_help() {
   local topic="${1:-}"
   case "$topic" in
-    "")
-      parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD"
-      parafork_usage
-      ;;
-    debug|--debug)
-      shift || true
-      if [[ $# -gt 0 ]]; then
-        parafork_die "unknown arg for help debug: $1"
-      fi
-      cmd_debug
-      ;;
-    *)
-      parafork_die "unknown help topic: $topic"
-      ;;
+    "") pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD"; usage_main ;;
+    debug|--debug) shift || true; [[ $# -eq 0 ]] || pf_die "unknown arg for help debug: $1"; cmd_help_debug ;;
+    *) pf_die "unknown help topic: $topic" ;;
   esac
 }
 
-cmd_debug() {
-  local pwd
-  pwd="$(pwd -P)"
-
-  local symbol_path=""
-  if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
-    local worktree_id worktree_root
-    worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-    worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "")"
-
-    if [[ -n "$worktree_root" ]]; then
-      debug_body() {
-        parafork_print_kv SYMBOL_PATH "$symbol_path"
-        parafork_print_output_block "$worktree_id" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD do exec"
-      }
-      parafork_invoke_logged "$worktree_root" "parafork help debug" "$ENTRY_CMD help --debug" -- debug_body
-      return 0
-    fi
-
-    parafork_print_kv SYMBOL_PATH "$symbol_path"
-    parafork_print_output_block "$worktree_id" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD do exec"
-    return 0
-  fi
-
-  local base_root=""
-  base_root="$(parafork_git_toplevel || true)"
-  if [[ -z "$base_root" ]]; then
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"
-    parafork_die "not in a git repo and no .worktree-symbol found"
-  fi
-
-  local container
-  container="$(parafork_worktree_container "$base_root")"
-  if [[ ! -d "$container" ]]; then
-    parafork_print_kv BASE_ROOT "$base_root"
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD init --new"
-    echo
-    echo "No worktree container found at: $container"
-    return 0
-  fi
-
-  local -a roots=()
-  local d
-  while IFS= read -r d; do
-    [[ -n "$d" ]] || continue
-    roots+=("$d")
-  done < <(parafork_list_worktrees_newest_first "$base_root")
-
-  if [[ "${#roots[@]}" -eq 0 ]]; then
-    parafork_print_kv BASE_ROOT "$base_root"
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "PASS" "$ENTRY_CMD init --new"
-    echo
-    echo "No worktrees found under: $container"
-    return 0
-  fi
-
-  echo "Found worktrees (newest first):"
-  for d in "${roots[@]}"; do
-    local id
-    id="$(parafork_symbol_get "$d/.worktree-symbol" "WORKTREE_ID" || echo "UNKNOWN")"
-    echo "- $id  $d"
-  done
-
-  local chosen="${roots[0]}"
-  local chosen_id
-  chosen_id="$(parafork_symbol_get "$chosen/.worktree-symbol" "WORKTREE_ID" || echo "UNKNOWN")"
-
-  local safe_next takeover_next
-  safe_next="$ENTRY_CMD init --new"
-  takeover_next="cd \"$chosen\" && $ENTRY_CMD init --reuse --yes --i-am-maintainer"
-
-  echo
-  parafork_print_kv BASE_ROOT "$base_root"
-  parafork_print_kv SAFE_NEXT "$safe_next"
-  parafork_print_kv TAKEOVER_NEXT "$takeover_next"
-  echo "RISK: takeover may interrupt another in-flight session; require explicit human approval."
-  parafork_print_output_block "$chosen_id" "$INVOCATION_PWD" "PASS" "$safe_next"
+cmd_init_new() {
+  local base="$1" branch root rule ap id wr wb body
+  [[ -f "$CONFIG_PATH" ]] || pf_die "missing config: $CONFIG_PATH"
+  branch="$(base_branch)"; root="$(workdir_root)"; rule="$(workdir_rule)"; ap="$(autoplan)"
+  git -C "$base" rev-parse --verify "$branch^{commit}" >/dev/null 2>&1 || pf_die "base branch not found: $branch"
+  mkdir -p "$base/$root"
+  id="$(pf_expand_worktree_rule "$rule")"; wr="$base/$root/$id"; wb="parafork/$id"
+  [[ ! -e "$wr" ]] || pf_die "worktree already exists: $wr"
+  git -C "$base" worktree add -b "$wb" "$wr" "$branch"
+  cat >"$wr/.worktree-symbol" <<SYMBOL
+PARAFORK_WORKTREE=1
+WORKTREE_ID=$id
+BASE_ROOT=$base
+WORKTREE_ROOT=$wr
+WORKTREE_BRANCH=$wb
+BASE_BRANCH=$branch
+WORKTREE_USED=1
+WORKTREE_LOCK=1
+WORKTREE_LOCK_OWNER=$(pf_agent_id)
+WORKTREE_LOCK_AT=$(pf_now_utc)
+CREATED_AT=$(pf_now_utc)
+SYMBOL
+  local b_exc w_exc
+  b_exc="$(pf_git_path_abs "$base" info/exclude)"; w_exc="$(pf_git_path_abs "$wr" info/exclude)"
+  mkdir -p "$(dirname "$b_exc")" "$(dirname "$w_exc")"; touch "$b_exc" "$w_exc"
+  pf_append_unique_line "$b_exc" "/$root/"
+  pf_append_unique_line "$w_exc" '/.worktree-symbol'
+  pf_append_unique_line "$w_exc" '/paradoc/'
+  mkdir -p "$wr/paradoc"
+  [[ -f "$(pf_root_dir)/assets/Exec.md" ]] && cp "$(pf_root_dir)/assets/Exec.md" "$wr/paradoc/Exec.md"
+  [[ -f "$(pf_root_dir)/assets/Merge.md" ]] && cp "$(pf_root_dir)/assets/Merge.md" "$wr/paradoc/Merge.md"
+  [[ "$ap" == "true" && -f "$(pf_root_dir)/assets/Plan.md" ]] && cp "$(pf_root_dir)/assets/Plan.md" "$wr/paradoc/Plan.md"
+  touch "$wr/paradoc/Log.txt"
+  LAST_INIT_ROOT="$wr"
+  body() { echo "MODE=new"; pf_print_kv WORKTREE_ROOT "$wr"; pf_print_kv WORKTREE_BRANCH "$wb"; pf_print_output_block "$id" "$INVOCATION_PWD" "PASS" "cd \"$wr\" && $ENTRY_CMD do exec"; }
+  pf_invoke_logged "$wr" "parafork-proposed init --new" "$ENTRY_CMD init --new" body
 }
 
 cmd_init() {
-  local invocation_pwd="$INVOCATION_PWD"
-
-  PARAFORK_LAST_INIT_WORKTREE_ROOT=""
-
-  local mode="auto" # auto|new|reuse
-  local yes="false"
-  local iam="false"
-
+  local mode="auto" yes="false" iam="false" pwd_now symbol in_wt="false" swid="" swroot="" sbase=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --new)
-        if [[ "$mode" != "auto" && "$mode" != "new" ]]; then
-          parafork_die "--new and --reuse are mutually exclusive"
-        fi
-        mode="new"
-        shift
-        ;;
-      --reuse)
-        if [[ "$mode" != "auto" && "$mode" != "reuse" ]]; then
-          parafork_die "--new and --reuse are mutually exclusive"
-        fi
-        mode="reuse"
-        shift
-        ;;
-      --yes)
-        yes="true"
-        shift
-        ;;
-      --i-am-maintainer)
-        iam="true"
-        shift
-        ;;
-      -h|--help)
-        parafork_usage_init
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
+      --new) [[ "$mode" == auto || "$mode" == new ]] || pf_die "--new and --reuse are mutually exclusive"; mode="new"; shift ;;
+      --reuse) [[ "$mode" == auto || "$mode" == reuse ]] || pf_die "--new and --reuse are mutually exclusive"; mode="reuse"; shift ;;
+      --yes) yes="true"; shift ;;
+      --i-am-maintainer) iam="true"; shift ;;
+      -h|--help) usage_init; return 0 ;;
+      *) pf_die "unknown arg: $1" ;;
     esac
   done
-
-  local pwd
-  pwd="$(pwd -P)"
-  local symbol_path=""
-  local in_worktree="false"
-  local symbol_worktree_id=""
-  local symbol_worktree_root=""
-  local symbol_base_root=""
-
-  if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
-    local parafork_worktree
-    parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
-    if [[ "$parafork_worktree" != "1" ]]; then
-      parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "$ENTRY_CMD help --debug"
-      parafork_die "found .worktree-symbol but not a parafork worktree: $symbol_path"
-    fi
-    in_worktree="true"
-    symbol_worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || true)"
-    symbol_worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || true)"
-    symbol_base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
+  pwd_now="$(pwd -P)"; symbol="$(pf_symbol_find_upwards "$pwd_now" 2>/dev/null || true)"
+  if [[ -n "$symbol" && "$(pf_symbol_get "$symbol" PARAFORK_WORKTREE || true)" == "1" ]]; then
+    in_wt="true"; swid="$(pf_symbol_get "$symbol" WORKTREE_ID || true)"; swroot="$(pf_symbol_get "$symbol" WORKTREE_ROOT || true)"; sbase="$(pf_symbol_get "$symbol" BASE_ROOT || true)"
+  elif [[ -n "$symbol" ]]; then
+    pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help --debug"; pf_die "found .worktree-symbol but not parafork worktree: $symbol"
   fi
-
-  if [[ "$in_worktree" == "true" && "$mode" == "auto" ]]; then
-    local wt_id="${symbol_worktree_id:-UNKNOWN}"
+  if [[ "$mode" == auto && "$in_wt" == true ]]; then
+    [[ -n "$swid" ]] || swid="UNKNOWN"
     echo "REFUSED: init called from inside a worktree without --reuse or --new"
-    parafork_print_kv SYMBOL_PATH "$symbol_path"
-    parafork_print_kv WORKTREE_ID "$wt_id"
-    parafork_print_kv WORKTREE_ROOT "$symbol_worktree_root"
-    parafork_print_kv BASE_ROOT "$symbol_base_root"
-    echo
-    echo "Choose one:"
-    echo "- Reuse current worktree: $ENTRY_CMD init --reuse --yes --i-am-maintainer"
-    echo "- Create new worktree:    $ENTRY_CMD init --new"
-    parafork_print_output_block "$wt_id" "$invocation_pwd" "FAIL" "$ENTRY_CMD init --new"
+    pf_print_kv SYMBOL_PATH "$symbol"; pf_print_kv WORKTREE_ID "$swid"; pf_print_kv WORKTREE_ROOT "$swroot"; pf_print_kv BASE_ROOT "$sbase"
+    echo; echo "Choose one:"; echo "- Reuse current worktree: $ENTRY_CMD init --reuse --yes --i-am-maintainer"; echo "- Create new worktree:    $ENTRY_CMD init --new"
+    pf_print_output_block "$swid" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD init --new"
     return 1
   fi
-
-  if [[ "$in_worktree" != "true" && "$mode" == "reuse" ]]; then
-    parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "$ENTRY_CMD help --debug"
-    parafork_die "--reuse requires being inside an existing parafork worktree"
-  fi
-
-  if [[ "$mode" == "auto" ]]; then
-    mode="new"
-  fi
-
-  if [[ "$mode" == "reuse" ]]; then
-    if [[ -z "$symbol_base_root" ]]; then
-      parafork_die "missing BASE_ROOT in .worktree-symbol: $symbol_path"
+  [[ "$mode" != reuse || "$in_wt" == true ]] || { pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help --debug"; pf_die "--reuse requires being inside existing parafork worktree"; }
+  [[ "$mode" != auto ]] || mode="new"
+  if [[ "$mode" == reuse ]]; then
+    if [[ "$yes" != true || "$iam" != true ]]; then
+      echo "REFUSED: missing CLI gate"
+      pf_print_output_block "${swid:-UNKNOWN}" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD init --reuse --yes --i-am-maintainer"
+      return 1
     fi
-
-    parafork_require_yes_i_am_maintainer_for_flag "--reuse" "$yes" "$iam"
-
-    local worktree_id worktree_root
-    worktree_id="${symbol_worktree_id:-UNKNOWN}"
-    worktree_root="$symbol_worktree_root"
-    [[ -n "$worktree_root" ]] || parafork_die "missing WORKTREE_ROOT in .worktree-symbol: $symbol_path"
-
-    PARAFORK_LAST_INIT_WORKTREE_ROOT="$worktree_root"
-
-    parafork_symbol_set "$symbol_path" "WORKTREE_USED" "1"
-    parafork_write_worktree_lock "$symbol_path"
-
-    init_reuse_body() {
-      echo "MODE=reuse"
-      parafork_print_kv WORKTREE_USED "1"
-      parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD do exec"
-    }
-
-    parafork_invoke_logged "$worktree_root" "parafork init" "$ENTRY_CMD init --reuse" -- init_reuse_body
-    return 0
+    [[ -n "$swroot" ]] || pf_die "missing WORKTREE_ROOT in .worktree-symbol"
+    pf_symbol_set "$symbol" WORKTREE_USED 1; pf_write_worktree_lock "$symbol"
+    local body
+    body() { echo "MODE=reuse"; pf_print_kv WORKTREE_USED 1; pf_print_output_block "${swid:-UNKNOWN}" "$INVOCATION_PWD" "PASS" "cd \"$swroot\" && $ENTRY_CMD do exec"; }
+    pf_invoke_logged "$swroot" "parafork-proposed init --reuse" "$ENTRY_CMD init --reuse --yes --i-am-maintainer" body
+    return $?
   fi
-
-  local base_root=""
-  if [[ "$in_worktree" == "true" ]]; then
-    base_root="$symbol_base_root"
-  else
-    base_root="$(parafork_git_toplevel || true)"
-  fi
-
-  if [[ -z "$base_root" ]]; then
-    parafork_print_output_block "UNKNOWN" "$invocation_pwd" "FAIL" "cd <BASE_ROOT> && $ENTRY_CMD init --new"
-    parafork_die "not in a git repo"
-  fi
-
-  local config_path
-  config_path="$(parafork_config_path_from_base "$base_root")"
-  if [[ ! -f "$config_path" ]]; then
-    parafork_die "missing config: $config_path (parafork skill package incomplete?)"
-  fi
-
-  local base_branch workdir_root workdir_rule autoplan
-  base_branch="$(parafork_toml_get_str "$config_path" "base" "branch" "main")"
-  workdir_root="$(parafork_toml_get_str "$config_path" "workdir" "root" ".parafork")"
-  workdir_rule="$(parafork_toml_get_str "$config_path" "workdir" "rule" "{YYMMDD}-{HEX4}")"
-  autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "false")"
-
-  mkdir -p "$base_root/$workdir_root"
-
-  local base_changes
-  base_changes="$(git -C "$base_root" status --porcelain | wc -l | tr -d ' ')"
-  if [[ "$base_changes" != "0" ]]; then
-    echo "WARN: base repo has uncommitted changes; init uses committed local '$base_branch' only"
-  fi
-
-  local worktree_start_point="$base_branch"
-  git -C "$base_root" rev-parse --verify "$worktree_start_point^{commit}" >/dev/null 2>&1 ||     parafork_die "invalid WORKTREE_START_POINT: $worktree_start_point"
-
-  hex4() {
-    od -An -N2 -tx1 /dev/urandom | tr -d ' 
-' | tr '[:lower:]' '[:upper:]'
-  }
-
-  expand_rule() {
-    local rule="$1"
-    local yymmdd
-    yymmdd="$(date +%y%m%d)"
-    local h
-    h="$(hex4)"
-    rule="${rule//\{YYMMDD\}/$yymmdd}"
-    rule="${rule//\{HEX4\}/$h}"
-    echo "$rule"
-  }
-
-  local worktree_id="" worktree_root=""
-  for _i in 1 2 3; do
-    local candidate candidate_root
-    candidate="$(expand_rule "$workdir_rule")"
-    candidate_root="$base_root/$workdir_root/$candidate"
-    if [[ -e "$candidate_root" ]]; then
-      continue
-    fi
-    worktree_id="$candidate"
-    worktree_root="$candidate_root"
-    break
-  done
-
-  if [[ -z "$worktree_id" || -z "$worktree_root" ]]; then
-    parafork_die "failed to allocate WORKTREE_ID under $base_root/$workdir_root (too many collisions)"
-  fi
-
-  local worktree_branch="parafork/$worktree_id"
-
-  git -C "$base_root" worktree add "$worktree_root" -b "$worktree_branch" "$worktree_start_point"
-
-  local created_at
-  created_at="$(parafork_now_utc)"
-  local symbol_path_new="$worktree_root/.worktree-symbol"
-
-  cat >"$symbol_path_new" <<EOF
-PARAFORK_WORKTREE=1
-WORKTREE_ID=$worktree_id
-BASE_ROOT=$base_root
-WORKTREE_ROOT=$worktree_root
-WORKTREE_BRANCH=$worktree_branch
-WORKTREE_USED=1
-WORKTREE_LOCK=1
-WORKTREE_LOCK_OWNER=$(parafork_agent_id)
-WORKTREE_LOCK_AT=$created_at
-BASE_BRANCH=$base_branch
-CREATED_AT=$created_at
-EOF
-
-  append_unique_line() {
-    local file="$1"
-    local line="$2"
-    touch "$file"
-    if grep -Fqx -- "$line" "$file" 2>/dev/null; then
-      return 0
-    fi
-    echo "$line" >>"$file"
-  }
-
-  local base_exclude_path worktree_exclude_path
-  base_exclude_path="$(parafork_git_path_abs "$base_root" "info/exclude")"
-  append_unique_line "$base_exclude_path" "/$workdir_root/"
-
-  worktree_exclude_path="$(parafork_git_path_abs "$worktree_root" "info/exclude")"
-  append_unique_line "$worktree_exclude_path" "/.worktree-symbol"
-  append_unique_line "$worktree_exclude_path" "/paradoc/"
-
-  mkdir -p "$worktree_root/paradoc"
-  : >"$worktree_root/paradoc/Log.txt"
-
-  local parafork_root
-  parafork_root="$(parafork_root_dir)"
-  for doc in Exec Merge; do
-    local src dst
-    src="$parafork_root/assets/$doc.md"
-    dst="$worktree_root/paradoc/$doc.md"
-    [[ -f "$src" ]] || parafork_die "missing template: $src"
-    [[ ! -f "$dst" ]] || parafork_die "refuse to overwrite: $dst"
-    cp "$src" "$dst"
-  done
-
-  if [[ "$autoplan" == "true" ]]; then
-    local src dst
-    src="$parafork_root/assets/Plan.md"
-    dst="$worktree_root/paradoc/Plan.md"
-    [[ -f "$src" ]] || parafork_die "missing template: $src"
-    [[ ! -f "$dst" ]] || parafork_die "refuse to overwrite: $dst"
-    cp "$src" "$dst"
-  fi
-
-  local start_commit base_commit
-  start_commit="$(git -C "$worktree_root" rev-parse --short HEAD)"
-  base_commit="$(git -C "$base_root" rev-parse --short "$worktree_start_point")"
-
-  echo "MODE=new"
-  parafork_print_kv AUTOPLAN "$autoplan"
-  parafork_print_kv WORKTREE_ROOT "$worktree_root"
-  parafork_print_kv WORKTREE_START_POINT "$worktree_start_point"
-  parafork_print_kv START_COMMIT "$start_commit"
-  parafork_print_kv BASE_COMMIT "$base_commit"
-
-  PARAFORK_LAST_INIT_WORKTREE_ROOT="$worktree_root"
-
-  parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD do exec"
-}
-
-do_status() {
-  local print_block="$1"
-  shift || true
-
-  local pwd
-  pwd="$(pwd -P)"
-  local symbol_path="$pwd/.worktree-symbol"
-
-  local worktree_id base_branch worktree_branch
-  worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-  base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-  worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
-
-  local branch head changes
-  branch="$(git rev-parse --abbrev-ref HEAD)"
-  head="$(git rev-parse --short HEAD)"
-  changes="$(git status --porcelain | wc -l | tr -d ' ')"
-
-  parafork_print_kv BRANCH "$branch"
-  parafork_print_kv HEAD "$head"
-  parafork_print_kv CHANGES "$changes"
-  parafork_print_kv BASE_BRANCH "$base_branch"
-  parafork_print_kv WORKTREE_BRANCH "$worktree_branch"
-
-  if [[ "$print_block" == "true" ]]; then
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD do exec"
-  fi
+  local base
+  [[ "$in_wt" == true ]] && base="$sbase" || base="$(pf_git_toplevel || true)"
+  [[ -n "$base" ]] || { pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "cd <BASE_ROOT> && $ENTRY_CMD init --new"; pf_die "not in a git repo"; }
+  cmd_init_new "$base"
 }
 
 cmd_check_status() {
-  if [[ $# -gt 0 ]]; then
-    parafork_die "unknown arg: $1"
-  fi
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check status" "$ENTRY_CMD check status" -- do_status "true"
-}
-
-do_check() {
-  local phase="$1"
-  local strict="$2" # true|false
-
-  local pwd
-  pwd="$(pwd -P)"
-  local symbol_path="$pwd/.worktree-symbol"
-
-  local worktree_root base_root
-  worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "$pwd")"
-  base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
-
-  local errors=()
-
-  local plan_file="$worktree_root/paradoc/Plan.md"
-  local exec_file="$worktree_root/paradoc/Exec.md"
-  local merge_file="$worktree_root/paradoc/Merge.md"
-  local log_file="$worktree_root/paradoc/Log.txt"
-
-  local config_path="" autoformat="true" autoplan="false"
-  if [[ -n "$base_root" ]]; then
-    config_path="$(parafork_config_path_from_base "$base_root")"
-  fi
-  if [[ -n "$config_path" && -f "$config_path" ]]; then
-    autoformat="$(parafork_toml_get_bool "$config_path" "custom" "autoformat" "true")"
-    autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "false")"
-  fi
-  if [[ "$strict" == "true" ]]; then
-    autoformat="true"
-    autoplan="true"
-  fi
-
-  local -a required_files=("$exec_file" "$merge_file" "$log_file")
-  if [[ "$autoplan" == "true" ]]; then
-    required_files+=("$plan_file")
-  fi
-
-  local f
-  for f in "${required_files[@]}"; do
-    if [[ ! -f "$f" ]]; then
-      errors+=("missing file: $f")
-    fi
-  done
-
-  if [[ -f "$plan_file" && "$autoplan" == "true" && "$autoformat" == "true" ]]; then
-    grep -Fq "## Milestones" "$plan_file" || errors+=("Plan.md missing heading: ## Milestones")
-    grep -Fq "## Tasks" "$plan_file" || errors+=("Plan.md missing heading: ## Tasks")
-    grep -Eq '^- \[.\] ' "$plan_file" || errors+=("Plan.md has no checkboxes")
-
-    if [[ "$phase" == "merge" ]]; then
-      if grep -Eq '^- \[ \] T[0-9]+' "$plan_file"; then
-        errors+=("Plan.md has incomplete tasks (merge phase requires tasks done)")
-      fi
-    fi
-  fi
-
-  if [[ -f "$merge_file" && "$autoformat" == "true" ]]; then
-    if ! grep -Ei 'Acceptance|Repro' "$merge_file" >/dev/null; then
-      errors+=("Merge.md missing Acceptance/Repro section keywords")
-    fi
-  fi
-
-  if [[ "$phase" == "merge" || "$strict" == "true" ]]; then
-    for f in "$exec_file" "$merge_file"; do
-      if [[ -f "$f" ]] && grep -Eq 'PARAFORK_TBD|TODO_TBD' "$f"; then
-        errors+=("placeholder remains: $f")
-      fi
-    done
-
-    if [[ "$autoplan" == "true" && -f "$plan_file" ]] && grep -Eq 'PARAFORK_TBD|TODO_TBD' "$plan_file"; then
-      errors+=("placeholder remains: $plan_file")
-    fi
-  fi
-
-  if [[ "$phase" == "merge" ]]; then
-    if git ls-files -- 'paradoc/' | grep -q .; then
-      errors+=("git pollution: tracked files under paradoc/ (must be empty: git ls-files -- 'paradoc/')")
-    fi
-    if git ls-files -- '.worktree-symbol' | grep -q .; then
-      errors+=("git pollution: .worktree-symbol is tracked (must be empty: git ls-files -- '.worktree-symbol')")
-    fi
-    if git diff --cached --name-only -- | grep -E '^(paradoc/|\.worktree-symbol$)' >/dev/null; then
-      errors+=("git pollution: staged includes paradoc/ or .worktree-symbol")
-    fi
-  fi
-
-  if [[ ${#errors[@]} -gt 0 ]]; then
-    echo "CHECK_RESULT=FAIL"
-    local e
-    for e in "${errors[@]}"; do
-      echo "FAIL: $e"
-    done
-    return 1
-  fi
-
-  echo "CHECK_RESULT=PASS"
-  return 0
-}
-
-do_review() {
-  local print_block="$1"
-  shift || true
-
-  local pwd symbol_path worktree_id base_branch worktree_branch
-  pwd="$(pwd -P)"
-  symbol_path="$pwd/.worktree-symbol"
-  worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-  base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-  worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
-
-  echo "### Review material (copy into paradoc/Merge.md)"
-  echo
-  echo "#### Commits ($base_branch..$worktree_branch)"
-  git log --oneline "$base_branch..$worktree_branch" || true
-  echo
-  echo "#### Files ($base_branch...$worktree_branch)"
-  git diff --name-status "$base_branch...$worktree_branch" || true
-  echo
-  echo "#### Notes"
-  echo "- Ensure Merge.md contains Acceptance / Repro steps."
-  echo "- Mention risks and rollback plan if relevant."
-
-  if [[ "$print_block" == "true" ]]; then
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "edit paradoc/Merge.md then $ENTRY_CMD check merge"
-  fi
+  [[ $# -eq 0 ]] || pf_die "unknown arg: $1"
+  guard_worktree || return 1
+  cd "$WT_ROOT"; guard_conflict "$WT_ROOT" "$WT_ID" "$(pwd -P)" || return 1
+  local body
+  body() { print_status; pf_print_output_block "$WT_ID" "$(pwd -P)" "PASS" "$ENTRY_CMD do exec"; }
+  pf_invoke_logged "$WT_ROOT" "parafork-proposed check status" "$ENTRY_CMD check status" body
 }
 
 cmd_check_merge() {
-  local strict="$1" # true|false
-  shift || true
-
-  if [[ $# -gt 0 ]]; then
-    parafork_die "unknown arg: $1"
-  fi
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  local argv_line="$ENTRY_CMD check merge"
-  if [[ "$strict" == "true" ]]; then
-    argv_line="$argv_line --strict"
-  fi
-
-  check_merge_body() {
-    local pwd worktree_id
-    pwd="$(pwd -P)"
-    worktree_id="${PARAFORK_WORKTREE_ID:-UNKNOWN}"
-
-    do_status "false"
-    do_review "false"
-    if ! do_check "merge" "$strict"; then
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"
-      return 1
-    fi
-
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD merge --yes --i-am-maintainer"
+  local strict="$1"; shift || true; [[ $# -eq 0 ]] || pf_die "unknown arg: $1"
+  guard_worktree || return 1
+  cd "$WT_ROOT"; guard_conflict "$WT_ROOT" "$WT_ID" "$(pwd -P)" || return 1
+  local argv="$ENTRY_CMD check merge"; [[ "$strict" == true ]] && argv+=" --strict"
+  local body
+  body() {
+    local pwd_now; pwd_now="$(pwd -P)"
+    print_status; print_review
+    if ! check_files merge "$strict"; then pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"; return 1; fi
+    pf_print_output_block "$WT_ID" "$pwd_now" "PASS" "$ENTRY_CMD merge --yes --i-am-maintainer"
   }
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check merge" "$argv_line" -- check_merge_body
+  pf_invoke_logged "$WT_ROOT" "parafork-proposed check merge" "$argv" body
 }
 
 cmd_check() {
-  local strict="false"
-  local topic="status"
-  local seen_topic="false"
-  local -a rest=()
-
+  local strict="false" topic="status" seen="false"; local -a rest=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --strict)
-        strict="true"
-        shift
-        ;;
-      -h|--help)
-        parafork_usage_check
-        exit 0
-        ;;
-      *)
-        if [[ "$seen_topic" == "false" ]]; then
-          topic="$1"
-          seen_topic="true"
-        else
-          rest+=("$1")
-        fi
-        shift
-        ;;
+      --strict) strict="true"; shift ;;
+      -h|--help) usage_check; return 0 ;;
+      *) [[ "$seen" == false ]] && topic="$1" seen="true" || rest+=("$1"); shift ;;
     esac
   done
-
+  [[ "$strict" != true || "$topic" == merge ]] || pf_die "--strict is only valid for check merge"
   case "$topic" in
-    merge) cmd_check_merge "$strict" "${rest[@]}" ;;
     status) cmd_check_status "${rest[@]}" ;;
-    *) parafork_die "unknown topic: $topic" ;;
+    merge) cmd_check_merge "$strict" "${rest[@]}" ;;
+    *) pf_die "unknown topic: $topic" ;;
   esac
 }
 
 cmd_do_exec() {
   local strict="false"
-
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --strict)
-        strict="true"
-        shift
-        ;;
-      -h|--help)
-        parafork_usage_do_exec
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
+      --strict) strict="true"; shift ;;
+      -h|--help) usage_exec; return 0 ;;
+      *) pf_die "unknown arg: $1" ;;
     esac
   done
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  local worktree_id="$PARAFORK_WORKTREE_ID"
-  local worktree_root="$PARAFORK_WORKTREE_ROOT"
-
-  do_exec_once() {
-    do_status "false"
-    if ! do_check "exec" "$strict"; then
-      parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues and rerun: $ENTRY_CMD do exec"
-      return 1
-    fi
-
-    local changes
+  guard_worktree || return 1
+  cd "$WT_ROOT"; guard_conflict "$WT_ROOT" "$WT_ID" "$(pwd -P)" || return 1
+  local argv="$ENTRY_CMD do exec"; [[ "$strict" == true ]] && argv+=" --strict"
+  local body
+  body() {
+    local pwd_now changes
+    pwd_now="$(pwd -P)"
+    print_status
+    if ! check_files exec "$strict"; then pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "fix issues and rerun: $ENTRY_CMD do exec"; return 1; fi
     changes="$(git status --porcelain | wc -l | tr -d ' ')"
-    if [[ "$changes" != "0" ]]; then
-      parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "$ENTRY_CMD do commit --message \"<msg>\""
+    if [[ "$changes" != 0 ]]; then
+      pf_print_output_block "$WT_ID" "$pwd_now" "PASS" "$ENTRY_CMD do commit --message \"<msg>\""
     else
-      parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "edit files (rerun: $ENTRY_CMD do exec)"
+      pf_print_output_block "$WT_ID" "$pwd_now" "PASS" "edit files (rerun: $ENTRY_CMD do exec)"
     fi
-    return 0
   }
-
-  local argv_line="$ENTRY_CMD do exec"
-  if [[ "$strict" == "true" ]]; then
-    argv_line="$argv_line --strict"
-  fi
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do exec" "$argv_line" -- do_exec_once
-  return $?
+  pf_invoke_logged "$WT_ROOT" "parafork-proposed do exec" "$argv" body
 }
 
 cmd_do_commit() {
-  local message=""
-  local no_check="false"
-
+  local message="" no_check="false"
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --message)
-        message="${2:-}"
-        shift 2
-        ;;
-      --no-check)
-        no_check="true"
-        shift
-        ;;
-      -h|--help)
-        parafork_usage_do_commit
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
+      --message) message="${2:-}"; shift 2 ;;
+      --no-check) no_check="true"; shift ;;
+      -h|--help) usage_commit; return 0 ;;
+      *) pf_die "unknown arg: $1" ;;
     esac
   done
-
-  [[ -n "$message" ]] || parafork_die "missing --message"
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  local worktree_id="$PARAFORK_WORKTREE_ID"
-  local pwd
-  pwd="$(pwd -P)"
-
-  commit_body() {
-    if [[ "$no_check" != "true" ]]; then
-      if ! do_check "exec" "false"; then
-        echo "REFUSED: check failed"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then retry: $ENTRY_CMD do commit --message \"...\""
-        return 1
-      fi
+  [[ -n "$message" ]] || pf_die "missing --message"
+  guard_worktree || return 1
+  cd "$WT_ROOT"; guard_conflict "$WT_ROOT" "$WT_ID" "$(pwd -P)" || return 1
+  local body
+  body() {
+    local pwd_now head
+    pwd_now="$(pwd -P)"
+    if [[ "$no_check" != true ]] && ! check_files exec false; then
+      echo "REFUSED: check failed"
+      pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "fix issues then retry: $ENTRY_CMD do commit --message \"...\""
+      return 1
     fi
-
     git add -A -- .
-
     if git diff --cached --name-only -- | grep -E '^(paradoc/|\.worktree-symbol$)' >/dev/null; then
       echo "REFUSED: git pollution staged"
-      echo "HINT: ensure worktree exclude contains '/paradoc/' and '/.worktree-symbol'"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "unstage pollution and retry: git reset -q && $ENTRY_CMD do commit --message \"...\""
+      pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "unstage pollution and retry: git reset -q && $ENTRY_CMD do commit --message \"...\""
       return 1
     fi
-
     if git diff --cached --quiet --; then
       echo "REFUSED: nothing staged"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "edit files then retry: $ENTRY_CMD do commit --message \"...\""
+      pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "edit files then retry: $ENTRY_CMD do commit --message \"...\""
       return 1
     fi
-
     git commit -m "$message"
-    local head
     head="$(git rev-parse --short HEAD)"
-    parafork_print_kv COMMIT "$head"
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD do exec"
+    pf_print_kv COMMIT "$head"
+    pf_print_output_block "$WT_ID" "$pwd_now" "PASS" "$ENTRY_CMD do exec"
   }
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do commit" "$ENTRY_CMD do commit --message \"...\"" -- commit_body
+  pf_invoke_logged "$WT_ROOT" "parafork-proposed do commit" "$ENTRY_CMD do commit --message \"...\"" body
 }
 
 cmd_do() {
   local action="${1:-}"
-  if [[ -z "$action" || "$action" == "-h" || "$action" == "--help" ]]; then
-    parafork_usage_do
-    exit 0
-  fi
-
+  if [[ -z "$action" || "$action" == -h || "$action" == --help ]]; then usage_do; return 0; fi
   shift || true
   case "$action" in
     exec) cmd_do_exec "$@" ;;
     commit) cmd_do_commit "$@" ;;
-    *) parafork_die "unknown action: $action" ;;
+    *) pf_die "unknown action: $action" ;;
   esac
 }
 
 cmd_merge() {
-  local yes="false"
-  local iam="false"
-  local message=""
-
+  local yes="false" iam="false"
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --yes)
-        yes="true"
-        shift
-        ;;
-      --i-am-maintainer)
-        iam="true"
-        shift
-        ;;
-      --message)
-        message="${2:-}"
-        shift 2
-        ;;
-      -h|--help)
-        parafork_usage_merge
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
+      --yes) yes="true"; shift ;;
+      --i-am-maintainer) iam="true"; shift ;;
+      -h|--help) usage_merge; return 0 ;;
+      *) pf_die "unknown arg: $1" ;;
     esac
   done
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  merge_body() {
-    local pwd symbol_path worktree_id base_root base_branch worktree_branch
-    pwd="$(pwd -P)"
-    symbol_path="$pwd/.worktree-symbol"
-    worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-    base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
-    base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-    worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
-
-    if [[ -z "$message" ]]; then
-      message="parafork: merge $worktree_id"
-    fi
-
-    local current_branch
-    current_branch="$(git rev-parse --abbrev-ref HEAD)"
-    if [[ -n "$worktree_branch" && "$current_branch" != "$worktree_branch" ]]; then
-      echo "REFUSED: wrong worktree branch"
-      parafork_print_kv EXPECTED_WORKTREE_BRANCH "$worktree_branch"
-      parafork_print_kv CURRENT_BRANCH "$current_branch"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "checkout correct branch and retry"
-      return 1
-    fi
-
-    do_status "false"
-    do_review "false"
-    if ! do_check "merge" "false"; then
-      echo "REFUSED: check merge failed"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"
-      return 1
-    fi
-
-    local base_tracked_dirty base_untracked_count
-    base_tracked_dirty="$(git -C "$base_root" status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
-    base_untracked_count="$(git -C "$base_root" status --porcelain | awk '/^\?\?/ {c++} END {print c+0}')"
-
-    if [[ "$base_tracked_dirty" != "0" ]]; then
-      echo "REFUSED: base repo not clean (tracked)"
-      parafork_print_kv BASE_TRACKED_DIRTY "$base_tracked_dirty"
-      parafork_print_kv BASE_UNTRACKED_COUNT "$base_untracked_count"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "clean base repo tracked changes then retry"
-      return 1
-    fi
-
-    local base_current_branch
-    base_current_branch="$(git -C "$base_root" rev-parse --abbrev-ref HEAD)"
-    if [[ "$base_current_branch" != "$base_branch" ]]; then
-      echo "REFUSED: base branch mismatch"
-      parafork_print_kv BASE_BRANCH "$base_branch"
-      parafork_print_kv BASE_CURRENT_BRANCH "$base_current_branch"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "cd \"$base_root\" && git checkout \"$base_branch\""
-      return 1
-    fi
-
-    echo "PREVIEW_COMMITS=$base_branch..$worktree_branch"
-    git -C "$base_root" log --oneline "$base_branch..$worktree_branch" || true
-
-    echo "PREVIEW_FILES=$base_branch...$worktree_branch"
-    git -C "$base_root" diff --name-status "$base_branch...$worktree_branch" || true
-
-    if [[ "$yes" != "true" || "$iam" != "true" ]]; then
-      echo "REFUSED: missing CLI gate"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "rerun with --yes --i-am-maintainer"
-      return 1
-    fi
-
-    local config_path squash
-    config_path="$(parafork_config_path_from_base "$base_root")"
-    squash="$(parafork_toml_get_bool "$config_path" "control" "squash" "true")"
-
-    parafork_print_kv SQUASH "$squash"
-    parafork_print_kv BASE_UNTRACKED_COUNT "$base_untracked_count"
-
-    if [[ "$squash" == "true" ]]; then
-      if ! git -C "$base_root" merge --squash "$worktree_branch"; then
-        echo "REFUSED: squash merge stopped (likely conflicts)"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve conflicts in \"$base_root\" then commit (or git -C \"$base_root\" merge --abort)"
-        return 1
-      fi
-      git -C "$base_root" commit -m "$message"
+  guard_worktree || return 1
+  cd "$WT_ROOT"; guard_conflict "$WT_ROOT" "$WT_ID" "$(pwd -P)" || return 1
+  local body
+  body() {
+    local pwd_now branch wt_branch cur base_dirty base_cur squash message
+    pwd_now="$(pwd -P)"
+    branch="$(pf_symbol_get "$WT_SYMBOL" BASE_BRANCH || true)"
+    wt_branch="$(pf_symbol_get "$WT_SYMBOL" WORKTREE_BRANCH || true)"
+    print_status; print_review
+    if ! check_files merge false; then echo "REFUSED: check merge failed"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "fix issues then rerun: $ENTRY_CMD check merge"; return 1; fi
+    if [[ "$yes" != true || "$iam" != true ]]; then echo "REFUSED: missing CLI gate"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "rerun with --yes --i-am-maintainer"; return 1; fi
+    cur="$(git rev-parse --abbrev-ref HEAD)"
+    [[ -n "$wt_branch" && "$cur" != "$wt_branch" ]] && { echo "REFUSED: wrong worktree branch"; pf_print_kv EXPECTED_WORKTREE_BRANCH "$wt_branch"; pf_print_kv CURRENT_BRANCH "$cur"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "checkout correct branch and retry"; return 1; }
+    base_dirty="$(git -C "$WT_BASE" status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+    [[ "$base_dirty" == 0 ]] || { echo "REFUSED: base repo not clean (tracked)"; pf_print_kv BASE_TRACKED_DIRTY "$base_dirty"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "clean base repo tracked changes then retry"; return 1; }
+    base_cur="$(git -C "$WT_BASE" rev-parse --abbrev-ref HEAD)"
+    [[ "$base_cur" == "$branch" ]] || { echo "REFUSED: base branch mismatch"; pf_print_kv BASE_BRANCH "$branch"; pf_print_kv BASE_CURRENT_BRANCH "$base_cur"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "cd \"$WT_BASE\" && git checkout \"$branch\""; return 1; }
+    squash="$(squash_mode)"; message="parafork: merge $WT_ID"; pf_print_kv SQUASH "$squash"
+    echo "PREVIEW_COMMITS=$branch..$wt_branch"; git -C "$WT_BASE" log --oneline "$branch..$wt_branch" || true
+    echo "PREVIEW_FILES=$branch...$wt_branch"; git -C "$WT_BASE" diff --name-status "$branch...$wt_branch" || true
+    if [[ "$squash" == true ]]; then
+      if ! git -C "$WT_BASE" merge --squash "$wt_branch"; then echo "REFUSED: squash merge stopped (likely conflicts)"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "resolve conflicts in \"$WT_BASE\" then commit"; return 1; fi
+      git -C "$WT_BASE" commit -m "$message"
     else
-      if ! git -C "$base_root" merge --no-ff "$worktree_branch" -m "$message"; then
-        echo "REFUSED: merge stopped (likely conflicts)"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git -C \"$base_root\" merge --continue (or git -C \"$base_root\" merge --abort)"
-        return 1
-      fi
+      if ! git -C "$WT_BASE" merge --no-ff "$wt_branch" -m "$message"; then echo "REFUSED: merge stopped (likely conflicts)"; pf_print_output_block "$WT_ID" "$pwd_now" "FAIL" "resolve then git -C \"$WT_BASE\" merge --continue"; return 1; fi
     fi
-
-    local merged_commit
-    merged_commit="$(git -C "$base_root" rev-parse --short HEAD)"
-    parafork_print_kv MERGED_COMMIT "$merged_commit"
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "run acceptance steps in paradoc/Merge.md"
+    pf_print_kv MERGED_COMMIT "$(git -C "$WT_BASE" rev-parse --short HEAD)"
+    pf_print_output_block "$WT_ID" "$pwd_now" "PASS" "run acceptance steps in paradoc/Merge.md"
   }
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork merge" "$ENTRY_CMD merge" -- merge_body
+  pf_invoke_logged "$WT_ROOT" "parafork-proposed merge" "$ENTRY_CMD merge" body
 }
 
 cmd_default() {
-  local pwd symbol_path in_worktree base_root
-  pwd="$(pwd -P)"
-  in_worktree="false"
-  if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
-    local parafork_worktree
-    parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
-    if [[ "$parafork_worktree" == "1" ]]; then
-      in_worktree="true"
-    fi
-  fi
-
-  if [[ "$in_worktree" == "true" ]]; then
-    base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
-  else
-    base_root="$(parafork_git_toplevel || true)"
-  fi
-
-  if [[ -z "$base_root" ]]; then
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"
-    parafork_die "not in a git repo and no .worktree-symbol found"
-  fi
-
-  cd "$base_root"
-  cmd_init --new
-
-  local chosen
-  chosen="$PARAFORK_LAST_INIT_WORKTREE_ROOT"
-  [[ -n "$chosen" ]] || parafork_die "failed to locate new worktree root after init"
-
-  cd "$chosen"
-  cmd_do exec
+  local symbol in_wt="false" base
+  symbol="$(pf_symbol_find_upwards "$(pwd -P)" 2>/dev/null || true)"
+  if [[ -n "$symbol" && "$(pf_symbol_get "$symbol" PARAFORK_WORKTREE || true)" == 1 ]]; then in_wt="true"; fi
+  [[ "$in_wt" == true ]] && base="$(pf_symbol_get "$symbol" BASE_ROOT || true)" || base="$(pf_git_toplevel || true)"
+  [[ -n "$base" ]] || { pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"; pf_die "not in a git repo and no .worktree-symbol found"; }
+  cd "$base"; cmd_init --new
+  [[ -n "$LAST_INIT_ROOT" ]] || pf_die "failed to resolve new worktree root"
+  cd "$LAST_INIT_ROOT"; cmd_do exec
 }
 
-cmd="${1:-}"
-if [[ -z "$cmd" ]]; then
-  cmd_default
-  exit $?
-fi
+main() {
+  local cmd="${1:-}"
+  if [[ -z "$cmd" ]]; then cmd_default; return $?; fi
+  [[ "$cmd" != -h && "$cmd" != --help ]] || cmd="help"
+  shift || true
+  case "$cmd" in
+    help) cmd_help "$@" ;;
+    init) cmd_init "$@" ;;
+    do) cmd_do "$@" ;;
+    check) cmd_check "$@" ;;
+    merge) cmd_merge "$@" ;;
+    *) echo "ERROR: unknown command: $cmd"; pf_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"; usage_main; return 1 ;;
+  esac
+}
 
-if [[ "$cmd" == "-h" || "$cmd" == "--help" ]]; then
-  cmd="help"
-fi
-shift || true
-
-case "$cmd" in
-  help) cmd_help "$@" ;;
-  init) cmd_init "$@" ;;
-  do) cmd_do "$@" ;;
-  check) cmd_check "$@" ;;
-  merge) cmd_merge "$@" ;;
-  *)
-    echo "ERROR: unknown command: $cmd"
-    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"
-    parafork_usage
-    exit 1
-    ;;
-esac
+main "$@"

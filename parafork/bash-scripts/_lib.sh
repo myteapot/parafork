@@ -1,83 +1,57 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-parafork_now_utc() {
+PF_OUTPUT_PRINTED="0"
+
+pf_now_utc() {
   date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
-parafork_die() {
+pf_die() {
   echo "ERROR: $*" >&2
   exit 1
 }
 
-parafork_warn() {
+pf_warn() {
   echo "WARN: $*" >&2
 }
 
-PARAFORK_OUTPUT_BLOCK_PRINTED="0"
-
-parafork_script_dir() {
+pf_script_dir() {
   cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P
 }
 
-parafork_root_dir() {
-  local script_dir
-  script_dir="$(parafork_script_dir)"
-  cd -- "$script_dir/.." && pwd -P
+pf_root_dir() {
+  cd -- "$(pf_script_dir)/.." && pwd -P
 }
 
-parafork_script_path() {
-  local script_name="$1"
-  local script_dir
-  script_dir="$(parafork_script_dir)"
-  echo "$script_dir/$script_name"
+pf_entry_cmd() {
+  local entry_path="$1"
+  printf 'bash "%s"' "$entry_path"
 }
 
-parafork_entry_path() {
-  local script_dir
-  script_dir="$(parafork_script_dir)"
-  echo "$script_dir/parafork.sh"
-}
-
-parafork_entry_cmd() {
-  local p
-  p="$(parafork_entry_path)"
-  printf 'bash "%s"' "$p"
-}
-
-parafork_config_path_from_base() {
-  local _base_root="${1:-}"
-
-  local skill_root
-  skill_root="$(parafork_root_dir)"
-  echo "$skill_root/settings/config.toml"
-}
-
-parafork_print_kv() {
+pf_print_kv() {
   printf '%s=%s\n' "$1" "$2"
 }
 
-parafork_print_output_block() {
+pf_print_output_block() {
   local worktree_id="$1"
-  local pwd="$2"
+  local pwd_now="$2"
   local status="$3"
   local next="$4"
 
-  PARAFORK_OUTPUT_BLOCK_PRINTED="1"
-  parafork_print_kv WORKTREE_ID "$worktree_id"
-  parafork_print_kv PWD "$pwd"
-  parafork_print_kv STATUS "$status"
-  parafork_print_kv NEXT "$next"
+  PF_OUTPUT_PRINTED="1"
+  pf_print_kv WORKTREE_ID "$worktree_id"
+  pf_print_kv PWD "$pwd_now"
+  pf_print_kv STATUS "$status"
+  pf_print_kv NEXT "$next"
 }
 
-parafork_toml_get_raw() {
+pf_toml_get_raw() {
   local file="$1"
   local section="$2"
   local key="$3"
 
-  if [[ ! -f "$file" ]]; then
-    return 1
-  fi
+  [[ -f "$file" ]] || return 1
 
   awk -v section="$section" -v key="$key" '
     BEGIN { in_section=0; found=0 }
@@ -108,109 +82,92 @@ parafork_toml_get_raw() {
   ' "$file"
 }
 
-parafork_toml_get_str() {
+pf_toml_get_str() {
   local file="$1"
   local section="$2"
   local key="$3"
-  local default="$4"
+  local default_val="$4"
 
-  local raw=""
-  if raw="$(parafork_toml_get_raw "$file" "$section" "$key" 2>/dev/null)"; then
-    :
-  else
-    echo "$default"
+  local raw
+  if ! raw="$(pf_toml_get_raw "$file" "$section" "$key" 2>/dev/null)"; then
+    printf '%s' "$default_val"
     return 0
   fi
 
-  if [[ "$raw" =~ ^\".*\"$ ]] || [[ "$raw" =~ ^\'.*\'$ ]]; then
+  if [[ "${raw:0:1}" == '"' && "${raw: -1}" == '"' ]]; then
+    raw="${raw:1:${#raw}-2}"
+  elif [[ "${raw:0:1}" == "'" && "${raw: -1}" == "'" ]]; then
     raw="${raw:1:${#raw}-2}"
   fi
 
   if [[ -z "$raw" ]]; then
-    echo "$default"
-    return 0
+    printf '%s' "$default_val"
+  else
+    printf '%s' "$raw"
   fi
-
-  echo "$raw"
 }
 
-parafork_toml_get_bool() {
+pf_toml_get_bool() {
   local file="$1"
   local section="$2"
   local key="$3"
-  local default="$4"
+  local default_val="$4"
 
-  local raw=""
-  if raw="$(parafork_toml_get_raw "$file" "$section" "$key" 2>/dev/null)"; then
-    :
-  else
-    echo "$default"
+  local raw
+  if ! raw="$(pf_toml_get_raw "$file" "$section" "$key" 2>/dev/null)"; then
+    printf '%s' "$default_val"
     return 0
   fi
 
-  raw="$(echo "$raw" | tr '[:upper:]' '[:lower:]')"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
   case "$raw" in
-    true) echo "true" ;;
-    false) echo "false" ;;
-    *) echo "$default" ;;
+    true|false)
+      printf '%s' "$raw"
+      ;;
+    *)
+      printf '%s' "$default_val"
+      ;;
   esac
 }
 
-parafork_git_toplevel() {
+pf_git_toplevel() {
   git rev-parse --show-toplevel 2>/dev/null
 }
 
-parafork_git_path_abs() {
+pf_git_path_abs() {
   local repo_root="$1"
   local git_path="$2"
-
   local p
+
   p="$(git -C "$repo_root" rev-parse --git-path "$git_path")"
-
   if [[ "$p" == /* ]]; then
-    echo "$p"
-    return 0
+    printf '%s' "$p"
+  else
+    printf '%s' "$repo_root/$p"
   fi
-
-  echo "$repo_root/$p"
 }
 
-parafork_agent_id() {
+pf_agent_id() {
   if [[ -n "${PARAFORK_AGENT_ID:-}" ]]; then
     printf '%s' "$PARAFORK_AGENT_ID"
     return 0
   fi
-
   if [[ -n "${CODEX_THREAD_ID:-}" ]]; then
     printf 'codex:%s' "$CODEX_THREAD_ID"
     return 0
   fi
-
   local user host
   user="${USER:-unknown}"
-  host="$(hostname 2>/dev/null || echo "unknown-host")"
+  host="$(hostname 2>/dev/null || printf 'unknown-host')"
   printf '%s@%s' "$user" "$host"
 }
 
-parafork_write_worktree_lock() {
-  local symbol_path="$1"
-  local agent_id lock_at
-
-  agent_id="$(parafork_agent_id)"
-  lock_at="$(parafork_now_utc)"
-
-  parafork_symbol_set "$symbol_path" "WORKTREE_LOCK" "1"
-  parafork_symbol_set "$symbol_path" "WORKTREE_LOCK_OWNER" "$agent_id"
-  parafork_symbol_set "$symbol_path" "WORKTREE_LOCK_AT" "$lock_at"
-}
-
-parafork_symbol_find_upwards() {
+pf_symbol_find_upwards() {
   local start="$1"
   local cur="$start"
-
   while true; do
     if [[ -f "$cur/.worktree-symbol" ]]; then
-      echo "$cur/.worktree-symbol"
+      printf '%s' "$cur/.worktree-symbol"
       return 0
     fi
     if [[ "$cur" == "/" ]]; then
@@ -220,10 +177,9 @@ parafork_symbol_find_upwards() {
   done
 }
 
-parafork_symbol_get() {
+pf_symbol_get() {
   local symbol_path="$1"
   local wanted_key="$2"
-
   [[ -f "$symbol_path" ]] || return 1
 
   local line key value
@@ -242,18 +198,16 @@ parafork_symbol_get() {
   return 1
 }
 
-parafork_symbol_set() {
+pf_symbol_set() {
   local symbol_path="$1"
   local key="$2"
   local value="$3"
-
   [[ -f "$symbol_path" ]] || return 1
 
-  local tmp
+  local tmp found line k
   tmp="$(mktemp)"
+  found="false"
 
-  local found="false"
-  local line k
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" == *"="* ]]; then
       k="${line%%=*}"
@@ -263,7 +217,6 @@ parafork_symbol_set() {
         continue
       fi
     fi
-
     printf '%s\n' "$line" >>"$tmp"
   done <"$symbol_path"
 
@@ -275,154 +228,35 @@ parafork_symbol_set() {
   rm -f "$tmp"
 }
 
-parafork_worktree_container() {
-  local base_root="$1"
-  local config_path workdir_root
-  config_path="$(parafork_config_path_from_base "$base_root")"
-  workdir_root=".parafork"
-  if [[ -f "$config_path" ]]; then
-    workdir_root="$(parafork_toml_get_str "$config_path" "workdir" "root" ".parafork")"
-  fi
-  echo "$base_root/$workdir_root"
+pf_write_worktree_lock() {
+  local symbol_path="$1"
+  local agent_id lock_at
+  agent_id="$(pf_agent_id)"
+  lock_at="$(pf_now_utc)"
+  pf_symbol_set "$symbol_path" "WORKTREE_LOCK" "1"
+  pf_symbol_set "$symbol_path" "WORKTREE_LOCK_OWNER" "$agent_id"
+  pf_symbol_set "$symbol_path" "WORKTREE_LOCK_AT" "$lock_at"
 }
 
-parafork_list_worktrees_newest_first() {
-  local base_root="$1"
-  local container
-  container="$(parafork_worktree_container "$base_root")"
-
-  [[ -d "$container" ]] || return 0
-
-  local d
-  while IFS= read -r d; do
-    [[ -d "$d" ]] || continue
-    [[ -f "$d/.worktree-symbol" ]] || continue
-    printf '%s\n' "$d"
-  done < <(ls -1dt "$container"/* 2>/dev/null || true)
-}
-
-parafork_guard_worktree() {
-  local pwd
-  pwd="$(pwd -P)"
-
-  PARAFORK_WORKTREE_ID=""
-  PARAFORK_WORKTREE_ROOT=""
-  PARAFORK_BASE_ROOT=""
-  PARAFORK_SYMBOL_PATH=""
-
-  local entry_cmd
-  entry_cmd="$(parafork_entry_cmd)"
-
-  local debug_next init_next
-  debug_next="$entry_cmd help --debug"
-  init_next="cd <BASE_ROOT> && $entry_cmd init --new"
-
-  local symbol_path=""
-  if symbol_path="$(parafork_symbol_find_upwards "$pwd" 2>/dev/null)"; then
-    :
-  else
-    local base_root=""
-    if base_root="$(parafork_git_toplevel)"; then
-      parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "$debug_next"
-      return 1
-    fi
-    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "$init_next"
-    return 1
-  fi
-
-  local parafork_worktree=""
-  parafork_worktree="$(parafork_symbol_get "$symbol_path" "PARAFORK_WORKTREE" || true)"
-  if [[ "$parafork_worktree" != "1" ]]; then
-    parafork_print_output_block "UNKNOWN" "$pwd" "FAIL" "$debug_next"
-    return 1
-  fi
-
-  local worktree_id=""
-  worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || true)"
-  [[ -n "$worktree_id" ]] || worktree_id="UNKNOWN"
-
-  local worktree_root=""
-  worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || true)"
-
-  if [[ -z "$worktree_root" ]]; then
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$debug_next"
-    return 1
-  fi
-
-  local worktree_used=""
-  worktree_used="$(parafork_symbol_get "$symbol_path" "WORKTREE_USED" || true)"
-  if [[ "$worktree_used" != "1" ]]; then
-    echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$entry_cmd init --reuse --yes --i-am-maintainer"
-    return 1
-  fi
-
-  local lock_enabled lock_owner agent_id
-  lock_enabled="$(parafork_symbol_get "$symbol_path" "WORKTREE_LOCK" || true)"
-  lock_owner="$(parafork_symbol_get "$symbol_path" "WORKTREE_LOCK_OWNER" || true)"
-  agent_id="$(parafork_agent_id)"
-
-  if [[ "$lock_enabled" != "1" || -z "$lock_owner" ]]; then
-    parafork_write_worktree_lock "$symbol_path"
-    lock_enabled="1"
-    lock_owner="$agent_id"
-  fi
-
-  if [[ "$lock_enabled" == "1" && "$lock_owner" != "$agent_id" ]]; then
-    echo "REFUSED: worktree locked by another agent"
-    parafork_print_kv LOCK_OWNER "$lock_owner"
-    parafork_print_kv AGENT_ID "$agent_id"
-
-    local safe_next takeover_next
-    safe_next="$entry_cmd init --new"
-    takeover_next="cd \"$worktree_root\" && $entry_cmd init --reuse --yes --i-am-maintainer"
-
-    parafork_print_kv SAFE_NEXT "$safe_next"
-    parafork_print_kv TAKEOVER_NEXT "$takeover_next"
-    echo "RISK: takeover may interrupt another in-flight session; require explicit human approval."
-
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$safe_next"
-    return 1
-  fi
-
-  PARAFORK_WORKTREE_ID="$worktree_id"
-  PARAFORK_WORKTREE_ROOT="$worktree_root"
-  PARAFORK_BASE_ROOT="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
-  PARAFORK_SYMBOL_PATH="$symbol_path"
-
-  return 0
-}
-
-parafork_invoke_logged() {
+pf_invoke_logged() {
   local worktree_root="$1"
-  shift
-  local script_name="$1"
-  shift
-  local argv_line="$1"
-  shift
+  local script_name="$2"
+  local argv_line="$3"
+  local fn="$4"
 
-  if [[ "${1:-}" != "--" ]]; then
-    parafork_die "internal: parafork_invoke_logged expects -- separator"
-  fi
-  shift
-
-  local log_file="$worktree_root/paradoc/Log.txt"
-  mkdir -p "$worktree_root/paradoc"
+  local log_dir="$worktree_root/paradoc"
+  local log_file="$log_dir/Log.txt"
+  mkdir -p "$log_dir"
   touch "$log_file"
 
-  local ts
-  ts="$(parafork_now_utc)"
   {
-    echo "===== $ts $script_name ====="
+    echo "===== $(pf_now_utc) $script_name ====="
     echo "cmd: $argv_line"
     echo "pwd: $(pwd -P)"
   } >>"$log_file"
 
   set +e
-  (
-    set -euo pipefail
-    "$@"
-  ) 2>&1 | tee -a "$log_file"
+  "$fn" 2>&1 | tee -a "$log_file"
   local code="${PIPESTATUS[0]}"
   set -e
 
@@ -430,12 +264,35 @@ parafork_invoke_logged() {
   return "$code"
 }
 
-parafork_require_yes_i_am_maintainer_for_flag() {
-  local flag_name="$1"
-  local yes="$2"
-  local iam="$3"
+pf_hex4() {
+  tr -dc 'A-F0-9' </dev/urandom | head -c 4
+}
 
-  if [[ "$yes" != "true" || "$iam" != "true" ]]; then
-    parafork_die "$flag_name requires --yes --i-am-maintainer"
+pf_expand_worktree_rule() {
+  local rule="$1"
+  local yymmdd hex4
+  yymmdd="$(date -u +%y%m%d)"
+  hex4="$(pf_hex4)"
+  printf '%s' "${rule//\{YYMMDD\}/$yymmdd}" | sed "s/{HEX4}/$hex4/g"
+}
+
+pf_append_unique_line() {
+  local file="$1"
+  local line="$2"
+  touch "$file"
+  if ! grep -Fqx -- "$line" "$file" 2>/dev/null; then
+    printf '%s\n' "$line" >>"$file"
   fi
 }
+
+pf_in_conflict_state() {
+  local repo_root="$1"
+  local git_dir
+  git_dir="$(pf_git_path_abs "$repo_root" ".")"
+
+  if [[ -f "$git_dir/MERGE_HEAD" || -f "$git_dir/CHERRY_PICK_HEAD" || -d "$git_dir/rebase-apply" || -d "$git_dir/rebase-merge" ]]; then
+    return 0
+  fi
+  return 1
+}
+
