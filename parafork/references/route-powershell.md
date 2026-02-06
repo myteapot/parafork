@@ -1,6 +1,8 @@
 # ROUTE: Windows PowerShell（执行路线）
 
 > 渐进式披露：仅在你已经确定要执行 Parafork（WRITE / SIDE-EFFECT），并且已经写好计划（或人类给了计划）之后，再阅读本文件。
+>
+> `SIDE-EFFECT` 指任何状态变更操作（例如 `init --new/--reuse`、`do commit`、`merge`、写入 `.worktree-symbol` / `paradoc/Log.txt`）。
 
 ## 路径约定
 
@@ -15,7 +17,8 @@
 
 ## 0) 定位（可选）
 
-- 不确定当前目录/是否在 worktree：运行 `parafork help --debug`（base-allowed）。
+- 不确定当前目录/是否在 worktree：
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" help --debug`
 
 ## 1) 默认固定流程（推荐）
 
@@ -27,24 +30,26 @@
 
 ## 2) 手动子命令（高级）
 
-- 新建 worktree：`... init --new`
+- 新建 worktree：
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" init --new`
 - 复用当前 worktree（补写 `WORKTREE_USED=1`，并刷新锁；需人类审批 CLI 门闩）：
   - 先向人类申请批准（目的、命令、风险、回退）
-  - `... init --reuse --yes --i-am-maintainer`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" init --reuse --yes --i-am-maintainer`
+  - 注意：`init --reuse` 仅在已有 parafork worktree 内有效。
 
 在 worktree 内（任意子目录均可；脚本会切到 `WORKTREE_ROOT`）：
-- `... do exec`
-- `... do exec --loop --interval 2`
-- `... check status`
-- `... check merge`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" do exec`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" do exec --strict`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" check status`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" check merge`
 
 每个 task 微循环（不自动 commit）：
 - 更新计划 / `paradoc/Exec.md`
-- `... do commit --message "..."`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" do commit --message "..."`
 
 ## 3) Merge（仅 maintainer）
 
-- 可选先检查：`... check merge`
+- 可选先检查：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" check merge`
 - 合并（会自动触发 merge 前检查链；需携带 CLI 门闩）：
   - 先向人类申请批准（目的、命令、风险、回退）
   - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`

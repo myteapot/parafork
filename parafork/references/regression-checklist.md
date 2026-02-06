@@ -71,6 +71,15 @@
 1) 分别在 Bash/PowerShell 执行 `help`、`help --debug`、`do exec`、`check merge`。
 2) 期望：关键输出块字段一致：`WORKTREE_ID/PWD/STATUS/NEXT`。
 
+## T-08b 文档路由一致性
+
+1) 检查 `SKILL.md`、`route-bash.md`、`route-powershell.md`、`scripts.md`。
+2) 期望：以下条目一致：
+   - `do exec` 仅保留 `--strict`
+   - `init --reuse` 仅在 worktree 内有效
+   - 锁冲突默认 `NEXT` 推荐 `init --new`
+   - 带 CLI 门闩命令执行前需要人类明确批准（策略层）
+
 ## T-09 strict 模式
 
 1) 保持 `custom.autoplan=false`。

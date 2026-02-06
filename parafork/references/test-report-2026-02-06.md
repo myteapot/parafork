@@ -89,11 +89,41 @@
 - 冒烟复跑：`bash parafork/scripts/regression-smoke.sh` `EXIT=0`，命令面与帮助文本保持稳定。
 - 结论：✅ 行为与当前设计一致（高风险动作由 CLI 门闩触发，策略层要求先获人类明确批准）。
 
+---
+
+### D) 文档冻结 + 脚本重写（中等简化）回归
+
+- 日期：2026-02-07（UTC）
+- 范围：`SKILL.md`、route/scripts/wiki/checklist 文档对齐；Bash/PowerShell 入口脚本按文档重写并收敛参数面。
+- 参数面变更：`do exec` 仅保留 `--strict`，删除 `--loop/--interval`。
+- 调试策略变更：`help --debug` 在 base 且存在旧 worktree 时，默认 `NEXT` 推荐 `init --new`，并输出 `SAFE_NEXT/TAKEOVER_NEXT` 与风险提示。
+
+执行方式：
+
+- 全回归脚本（临时仓库）：`/tmp/pf-check2.sh`
+- 冒烟脚本：`bash parafork/scripts/regression-smoke.sh`
+
+结果（T01~T10 + T08b）：
+
+- `T01` 无参入口：✅
+- `T02` worktree 内 `init` 无参拒绝：✅
+- `T03` reuse CLI 门闩（缺失拒绝/齐备通过）：✅
+- `T04` 锁冲突拒绝与接管恢复：✅
+- `T05` commit 污染防护：✅
+- `T06` merge 占位符检查：✅
+- `T07` merge CLI 门闩（缺失拒绝/齐备进入链路）：✅
+- `T08` Bash/PowerShell `STATUS/NEXT` 语义一致：✅
+- `T08b` 文档路由一致性：✅
+- `T09` strict 模式：✅
+- `T10` 审计日志：✅
+
+结论：✅ 本轮“文档先行 + 脚本重写 + 全回归 + 冒烟”通过。
+
 ## 总结
 
 - 本轮覆盖的关键行为与预期一致。
-- 重构目标（不改变外部 CLI 语义，仅内部收敛）在已测范围内成立。
-- 建议后续在真实 worktree 流程下补充 `merge` CLI 门闩与冲突态人工接管的人工验收（涉及 maintainer 决策链）。
+- 在保留 `help/init/do/check/merge` 命令面的前提下，`do exec` 参数收敛为 `--strict`，并完成 Bash/PowerShell 双栈同语义重写。
+- 建议后续在真实多人并发会话下补充“锁冲突接管审批链”的人工演练验证。
 
 ## 备注
 

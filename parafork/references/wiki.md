@@ -21,6 +21,7 @@
 - `WORKTREE_ID`：session 标识（默认 `{YYMMDD}-{HEX4}`）。
 - `.worktree-symbol`：worktree 根目录的标识/数据文件，用于强约束与 UX 提示。
 - `paradoc/`：worktree 内的审计材料目录（Exec/Merge/Log；Plan 为可选）。
+- `SIDE-EFFECT`：任何状态变更操作（例如 `init --new/--reuse`、`do commit`、`merge`、写入 `.worktree-symbol` / `paradoc/Log.txt`）。
 
 本文档中：
 - `<PARAFORK_ROOT>`：本包根目录
@@ -122,7 +123,8 @@
 
 并发门禁规则：
 - 若缺失 `WORKTREE_LOCK*`（旧 worktree），脚本首次进入时会自动补锁。
-- 若 `WORKTREE_LOCK_OWNER` 与当前 agent 不一致，worktree-required 命令会拒绝执行并要求人工接管。
+- 若 `WORKTREE_LOCK_OWNER` 与当前 agent 不一致，worktree-required 命令会拒绝执行。
+- 锁冲突时默认 `NEXT` 推荐 `init --new`；接管仅为高风险备选，且需要人类明确批准。
 
 ---
 
@@ -152,7 +154,8 @@ Core-Lite 约束：创建/检查/合并均仅基于本地 `base.branch` 的已�
 
 复用审批门闩：
 - CLI 门闩：`--yes --i-am-maintainer`
-- 必须满足后，`init --reuse` 才会放行。
+- `init --reuse` 仅在已有 parafork worktree 内有效；且必须满足 CLI 门闩才会放行。
+- 带 CLI 门闩命令（`init --reuse` / `merge`）在策略层要求先获人类明确批准。
 
 ---
 
@@ -185,6 +188,7 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 
 2) 按 task 微循环推进（`do exec` 不会自动 commit）：
    - 更新 `paradoc/Exec.md`（What/Why/Verify）
+   - 可选严格检查：`do exec --strict`
    - 运行 `do commit --message "..."` 保存进度：
      - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" do commit --message "..."`
      - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" do commit --message "..."`
@@ -221,9 +225,11 @@ help 中仅展示以下顶层命令：
 - `parafork init ...`
 
 必须在 parafork worktree 中运行（worktree-required；脚本会自动切到 `WORKTREE_ROOT`）：
-- `parafork do exec|commit ...`
+- `parafork do exec [--strict]`
+- `parafork do commit --message "<msg>" [--no-check]`
 - `parafork check merge|status ...`
 - `parafork merge ...`（仅 maintainer；需 CLI 门闩）
+- `parafork init --reuse --yes --i-am-maintainer`
 
 兼容性说明：
 - 仅支持 canonical 顶层命令：`help/init/do/check/merge`。

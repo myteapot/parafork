@@ -33,7 +33,7 @@ check topics:
   status    (default)
 
 do actions:
-  exec [--loop] [--interval <sec>] [--strict]
+  exec [--strict]
   commit --message "<msg>" [--no-check]
 
 Notes:
@@ -74,13 +74,13 @@ function ParaforkUsageDo {
 Usage: $ENTRY_CMD do <action> [args...]
 
 Actions:
-  exec [--loop] [--interval <sec>] [--strict]
+  exec [--strict]
   commit --message "<msg>" [--no-check]
 "@
 }
 
 function ParaforkUsageDoExec {
-  "Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]"
+  "Usage: $ENTRY_CMD do exec [--strict]"
 }
 
 function ParaforkUsageDoCommit {
@@ -259,10 +259,7 @@ function EnsureWorktreeUsed {
 }
 
 function InitNewWorktree {
-  param(
-    [bool]$Yes = $false,
-    [bool]$Iam = $false
-  )
+  param()
 
   $pwdNow = (Get-Location).Path
   $symbolPath = ParaforkSymbolFindUpwards $pwdNow
@@ -642,12 +639,10 @@ function CmdDebug {
   $pwdNow = (Get-Location).Path
   $symbolPath = ParaforkSymbolFindUpwards $pwdNow
 
-  $debugCmd = ParaforkEntryCmd @('help', '--debug')
-
   if ($symbolPath) {
     $paraforkWorktree = ParaforkSymbolGet $symbolPath 'PARAFORK_WORKTREE'
     if ($paraforkWorktree -ne '1') {
-      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' $debugCmd
+      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
       ParaforkDie "found .worktree-symbol but not a parafork worktree: $symbolPath"
     }
 
@@ -655,18 +650,9 @@ function CmdDebug {
     if ([string]::IsNullOrEmpty($worktreeId)) {
       $worktreeId = 'UNKNOWN'
     }
-    $worktreeRoot = ParaforkSymbolGet $symbolPath 'WORKTREE_ROOT'
 
-    $body = {
-      ParaforkPrintKv 'SYMBOL_PATH' $symbolPath
-      ParaforkPrintOutputBlock $worktreeId $invocationPwd 'PASS' (ParaforkEntryCmd @('do', 'exec'))
-    }
-
-    if (-not [string]::IsNullOrEmpty($worktreeRoot)) {
-      ParaforkInvokeLogged $worktreeRoot 'parafork help debug' @() $body
-    } else {
-      & $body
-    }
+    ParaforkPrintKv 'SYMBOL_PATH' $symbolPath
+    ParaforkPrintOutputBlock $worktreeId $invocationPwd 'PASS' (ParaforkEntryCmd @('do', 'exec'))
     return 0
   }
 
@@ -685,8 +671,8 @@ function CmdDebug {
     return 0
   }
 
-  $roots = ParaforkListWorktreesNewestFirst $baseRoot
-  if (-not $roots -or $roots.Count -eq 0) {
+  $roots = @(ParaforkListWorktreesNewestFirst $baseRoot)
+  if ($roots.Count -eq 0) {
     ParaforkPrintKv 'BASE_ROOT' $baseRoot
     ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'PASS' (ParaforkEntryCmd @('init', '--new'))
     Write-Output ""
@@ -694,7 +680,7 @@ function CmdDebug {
     return 0
   }
 
-  Write-Output "Found worktrees (newest first):"
+  Write-Output 'Found worktrees (newest first):'
   foreach ($d in $roots) {
     $id = ParaforkSymbolGet (Join-Path $d '.worktree-symbol') 'WORKTREE_ID'
     if ([string]::IsNullOrEmpty($id)) {
@@ -709,15 +695,15 @@ function CmdDebug {
     $chosenId = 'UNKNOWN'
   }
 
-  $next = "cd " + (ParaforkQuotePs $chosen) + "; " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
+  $safeNext = ParaforkEntryCmd @('init', '--new')
+  $takeoverNext = "cd " + (ParaforkQuotePs $chosen) + "; " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
 
-  $body = {
-    Write-Output ""
-    ParaforkPrintKv 'BASE_ROOT' $baseRoot
-    ParaforkPrintOutputBlock $chosenId $invocationPwd 'PASS' $next
-  }
-
-  ParaforkInvokeLogged $chosen 'parafork help debug' @() $body
+  Write-Output ''
+  ParaforkPrintKv 'BASE_ROOT' $baseRoot
+  ParaforkPrintKv 'SAFE_NEXT' $safeNext
+  ParaforkPrintKv 'TAKEOVER_NEXT' $takeoverNext
+  Write-Output 'RISK: takeover may interrupt another in-flight session; require explicit human approval.'
+  ParaforkPrintOutputBlock $chosenId $invocationPwd 'PASS' $safeNext
   return 0
 }
 
@@ -845,7 +831,7 @@ function CmdInit {
     $null = Set-Location -LiteralPath $symbolBaseRoot
   }
 
-  $createdRaw = @(InitNewWorktree -Yes:$yes -Iam:$iam)
+  $createdRaw = @(InitNewWorktree)
   $created = $null
   foreach ($item in $createdRaw) {
     if ($item -is [hashtable]) {
@@ -976,8 +962,6 @@ function CmdDoExec {
   if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $strict = $false
-  $loop = $false
-  $interval = 2
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
@@ -989,19 +973,8 @@ function CmdDoExec {
 
     switch ($a) {
       '--strict' { $strict = $true; $i++; continue }
-      '--loop' { $loop = $true; $i++; continue }
-      '--interval' {
-        if ($i + 1 -ge $CmdArgs.Count) { ParaforkDie 'missing value for --interval' }
-        $interval = [int]$CmdArgs[$i + 1]
-        $i += 2
-        continue
-      }
       default { ParaforkDie ("unknown arg: {0}" -f $a) }
     }
-  }
-
-  if ($interval -lt 1) {
-    ParaforkDie ("invalid --interval: {0}" -f $interval)
   }
 
   $guard = ParaforkGuardWorktree
@@ -1028,42 +1001,16 @@ function CmdDoExec {
     }
   }
 
-  if (-not $loop) {
-    try {
-      & $execOnce
-      return 0
-    } catch {
-      return 1
-    }
+  $argv = @()
+  if ($strict) {
+    $argv += '--strict'
   }
 
   try {
-    & $execOnce
+    ParaforkInvokeLogged $guard.WorktreeRoot 'parafork do exec' $argv $execOnce
+    return 0
   } catch {
     return 1
-  }
-
-  $lastHead = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
-  $lastPorcelain = ((& git status --porcelain 2>$null) -join "`n")
-
-  while ($true) {
-    Start-Sleep -Seconds $interval
-
-    $head = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
-    $porcelain = ((& git status --porcelain 2>$null) -join "`n")
-
-    if ($head -eq $lastHead -and $porcelain -eq $lastPorcelain) {
-      continue
-    }
-
-    $lastHead = $head
-    $lastPorcelain = $porcelain
-
-    try {
-      & $execOnce
-    } catch {
-      return 1
-    }
   }
 }
 

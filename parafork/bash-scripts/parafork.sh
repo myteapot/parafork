@@ -41,14 +41,14 @@ parafork_usage_do() {
 Usage: $ENTRY_CMD do <action> [args...]
 
 Actions:
-  exec [--loop] [--interval <sec>] [--strict]
+  exec [--strict]
   commit --message "<msg>" [--no-check]
 EOF
 }
 
 parafork_usage_do_exec() {
   cat <<EOF
-Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]
+Usage: $ENTRY_CMD do exec [--strict]
 EOF
 }
 
@@ -99,7 +99,7 @@ check topics:
   status    (default)
 
 do actions:
-  exec [--loop] [--interval <sec>] [--strict]
+  exec [--strict]
   commit --message "<msg>" [--no-check]
 
 Notes:
@@ -196,8 +196,16 @@ cmd_debug() {
   local chosen_id
   chosen_id="$(parafork_symbol_get "$chosen/.worktree-symbol" "WORKTREE_ID" || echo "UNKNOWN")"
 
+  local safe_next takeover_next
+  safe_next="$ENTRY_CMD init --new"
+  takeover_next="cd \"$chosen\" && $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+
+  echo
   parafork_print_kv BASE_ROOT "$base_root"
-  parafork_print_output_block "$chosen_id" "$INVOCATION_PWD" "PASS" "cd \"$chosen\" && $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+  parafork_print_kv SAFE_NEXT "$safe_next"
+  parafork_print_kv TAKEOVER_NEXT "$takeover_next"
+  echo "RISK: takeover may interrupt another in-flight session; require explicit human approval."
+  parafork_print_output_block "$chosen_id" "$INVOCATION_PWD" "PASS" "$safe_next"
 }
 
 cmd_init() {
@@ -703,22 +711,12 @@ cmd_check() {
 
 cmd_do_exec() {
   local strict="false"
-  local loop="false"
-  local interval="2"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --strict)
         strict="true"
         shift
-        ;;
-      --loop)
-        loop="true"
-        shift
-        ;;
-      --interval)
-        interval="${2:-}"
-        shift 2
         ;;
       -h|--help)
         parafork_usage_do_exec
@@ -729,10 +727,6 @@ cmd_do_exec() {
         ;;
     esac
   done
-
-  if ! [[ "$interval" =~ ^[0-9]+$ ]]; then
-    parafork_die "invalid --interval: $interval"
-  fi
 
   if ! parafork_guard_worktree; then
     exit 1
@@ -759,33 +753,13 @@ cmd_do_exec() {
     return 0
   }
 
-  if [[ "$loop" != "true" ]]; then
-    do_exec_once
-    return $?
+  local argv_line="$ENTRY_CMD do exec"
+  if [[ "$strict" == "true" ]]; then
+    argv_line="$argv_line --strict"
   fi
 
-  do_exec_once || return 1
-
-  local last_head last_porcelain
-  last_head="$(git rev-parse --short HEAD)"
-  last_porcelain="$(git status --porcelain || true)"
-
-  while true; do
-    sleep "$interval"
-
-    local head porcelain
-    head="$(git rev-parse --short HEAD)"
-    porcelain="$(git status --porcelain || true)"
-
-    if [[ "$head" == "$last_head" && "$porcelain" == "$last_porcelain" ]]; then
-      continue
-    fi
-
-    last_head="$head"
-    last_porcelain="$porcelain"
-
-    do_exec_once || return 1
-  done
+  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do exec" "$argv_line" -- do_exec_once
+  return $?
 }
 
 cmd_do_commit() {

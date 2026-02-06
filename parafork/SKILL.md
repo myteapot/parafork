@@ -1,6 +1,6 @@
 ---
 name: parafork
-description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/check/merge）。默认无参执行 init --new + do exec；复用/合并仅需 CLI 门闩；锁冲突必须拒绝并人工接管；写操作必须先进入 WORKTREE_ROOT。执行命令仅看 references/route-bash.md 或 references/route-powershell.md。"
+description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/check/merge）。默认无参执行 init --new + do exec；do exec 仅保留 --strict；复用/合并仅需 CLI 门闩；锁冲突默认新开 worktree、接管为高风险备选。执行命令仅看 references/route-bash.md 或 references/route-powershell.md。"
 ---
 ---------------------- Parafork SKILL.md开始符号 ----------------------
 # Parafork 技能协议
@@ -15,14 +15,18 @@ description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/chec
 - **2.命令白名单**
   - 命令面固定：仅支持 `help/init/do/check/merge`。
   - `do` 仅允许 `exec|commit`；`check` 仅允许 `status|merge`。
+  - `do exec` 仅允许参数：`--strict`（不再支持 `--loop/--interval`）。
 
 - **3.复用门闩（init --reuse）**
   - 仅允许通过 `init --reuse` 复用。
+  - `init --reuse` 仅允许在已有 parafork worktree 内执行。
   - 必须携带 CLI 门闩：`--yes --i-am-maintainer`。
   - 使用前必须先向人类发起审批请求（至少包含：目的、命令、风险、回退），并收到明确同意。
 
 - **4.并发锁门闩**
-  - 若 `WORKTREE_LOCK_OWNER` 非当前 agent，必须拒绝并交由人类批准接管。
+  - 若 `WORKTREE_LOCK_OWNER` 非当前 agent，必须拒绝。
+  - 默认 `NEXT` 必须推荐 `init --new`（新开 worktree）。
+  - 接管复用仅作为高风险备选，且必须先获人类明确批准。
 
 - **5.合并门闩（merge）**
   - merge 禁止自动执行；仅 maintainer 显式批准后可运行。
@@ -40,7 +44,8 @@ description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/chec
 ## Execution Algorithm（执行算法）
 - **步骤 1：判定请求类型**
   - `READ-ONLY`：解释/检索/审阅，可只读执行。
-  - `WRITE/SIDE-EFFECT`：改文件、`apply_patch`、会改变工作区或 git 状态的命令。
+  - `WRITE/SIDE-EFFECT`：改文件、`apply_patch`、或任何会改变状态的命令。
+  - `SIDE-EFFECT` 明确定义：会改变工作区、git 状态、worktree 元数据或审计状态（例如 `init --new/--reuse`、`do commit`、`merge`、写 `paradoc/Log.txt`）。
 
 - **步骤 2：WRITE/SIDE-EFFECT 固定顺序**
   1. 先用 plan 工具写/更新执行计划（优先遵守人类给定 plan）。
@@ -52,7 +57,8 @@ description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/chec
 - **收到 WRITE/SIDE-EFFECT 请求但不在 worktree**：先 `init --new`，再 `do exec`，之后才开始改动。
 - **复用缺少 CLI 门闩或用户未明确复用**：直接 `FAIL`，输出可复制 `NEXT`（补 `--yes --i-am-maintainer`）。
 - **需要 CLI 门闩但尚未获得人类明确批准**：直接 `FAIL`，输出审批请求模板；禁止自行补门闩继续执行。
-- **锁冲突或旧命令请求**：直接 `FAIL`；输出 `LOCK_OWNER/AGENT_ID`，默认 `NEXT` 推荐 `init --new`；仅在人类明确批准时才执行接管复用。
+- **锁冲突**：直接 `FAIL`；输出 `LOCK_OWNER/AGENT_ID/SAFE_NEXT/TAKEOVER_NEXT`，默认 `NEXT` 与 `SAFE_NEXT` 推荐 `init --new`。
+- **旧命令请求**：直接 `FAIL`；旧命令指非 Core-Lite 命令（如 `watch`、`do pull`、`check diff/log/review`）。
 
 ## Route Entry（路由入口）
 - **执行命令入口（仅二选一）**

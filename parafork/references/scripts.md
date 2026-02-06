@@ -9,23 +9,28 @@
 
 ## base-allowed（可在 base repo / 任意目录运行）
 - `parafork help [debug|--debug]`
-- `parafork init [--new|--reuse] ...`
+- `parafork init`
+- `parafork init --new`
+
+> `init --reuse` 不属于 base-allowed：它仅在已有 parafork worktree 内有效。
 
 ## worktree-required（必须在 parafork worktree 中；脚本会自动切到 WORKTREE_ROOT）
 - `parafork do <action> ...`
-  - `do exec [--loop] [--interval <sec>] [--strict]`
+  - `do exec [--strict]`
   - `do commit --message "<msg>" [--no-check]`
 - `parafork check [topic] ...`
   - `check merge [--strict]`
   - `check status`
 - `parafork merge ...`（仅 maintainer；需 CLI 门闩）
+- `parafork init --reuse --yes --i-am-maintainer`
 
 ## 默认入口
 - 无参运行会执行：`init --new` + `do exec`（单次检查并输出 NEXT）。
 
 ## 复用 CLI 门闩与并发门禁
 - 复用（`init --reuse`）需要 CLI 门闩：`--yes --i-am-maintainer`。
-- worktree 并发门禁通过 `.worktree-symbol` 中 `WORKTREE_LOCK*` 字段执行；锁冲突时脚本会拒绝并要求人工接管。
+- 带 CLI 门闩命令（`init --reuse` / `merge`）在策略层要求先获人类明确批准。
+- worktree 并发门禁通过 `.worktree-symbol` 中 `WORKTREE_LOCK*` 字段执行；锁冲突时默认推荐 `init --new`，接管仅为高风险备选。
 
 ## 兼容性
 - 仅支持 canonical 顶层命令：`help/init/do/check/merge`。
