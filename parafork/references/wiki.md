@@ -116,12 +116,10 @@
 关键字段（最少集合）：
 - `PARAFORK_WORKTREE=1`
 - `WORKTREE_ID` / `BASE_ROOT` / `WORKTREE_ROOT`
-- `WORKTREE_BRANCH` / `WORKTREE_START_POINT`
+- `WORKTREE_BRANCH`
 - `WORKTREE_USED`（`0|1`；顺序门闩，worktree-required 子命令要求为 `1`）
 - `WORKTREE_LOCK`（`1`）/ `WORKTREE_LOCK_OWNER` / `WORKTREE_LOCK_AT`（并发门禁）
-- `BASE_BRANCH` / `REMOTE_NAME`
-- `REMOTE_AUTOSYNC`（`true|false`）
-- `BASE_BRANCH_SOURCE` / `REMOTE_NAME_SOURCE` / `REMOTE_AUTOSYNC_SOURCE`（`config|cli|none`）
+- `BASE_BRANCH`
 - `CREATED_AT`（UTC）
 
 并发门禁规则：
@@ -140,10 +138,6 @@
 [base]
 branch = "main"
 
-[remote]
-name = "origin"
-autosync = false      # true=fetch remote and align base->remote before merge
-
 [workdir]
 root = ".parafork"
 rule = "{YYMMDD}-{HEX4}"
@@ -156,7 +150,7 @@ autoformat = true      # check 的文档结构/占位符检查开关
 squash = true          # merge：true=--squash，false=--no-ff
 ```
 
-`--no-fetch` 仅控制是否执行 `git fetch <remote>`。当 `remote.autosync=false` 时，默认使用本地 `base.branch` 的已提交状态作为基线。
+Core-Lite 约束：创建/检查/合并均仅基于本地 `base.branch` 的已提交状态；不再依赖 remote 同步路径。
 
 复用审批门闩：
 - 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
@@ -197,7 +191,7 @@ Bash（Linux/macOS/WSL/Git-Bash）：
    - 运行 `do commit --message "..."` 保存进度：
      - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" do commit --message "..."`
      - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" do commit --message "..."`
-   - 需要时可运行：`do pull`、`check status|diff|log|review`
+   - 需要时可运行：`check status`（只读）
 
 3) 合并前：
 - 写 `paradoc/Merge.md`（必须包含验收/复现步骤关键字：Acceptance / Repro）
@@ -231,10 +225,10 @@ help 中仅展示以下顶层命令：
 - `parafork init ...`
 
 必须在 parafork worktree 中运行（worktree-required；脚本会自动切到 `WORKTREE_ROOT`）：
-- `parafork do exec|commit|pull ...`
-- `parafork check merge|status|diff|log|review ...`
+- `parafork do exec|commit ...`
+- `parafork check merge|status ...`
 - `parafork merge ...`（仅 maintainer；需双门闩）
 
 兼容性说明：
 - 仅支持 canonical 顶层命令：`help/init/do/check/merge`。
-- `watch`、顶层 `debug`、`check exec`、`check plan` 均不再支持。
+- 非 Core-Lite 命令/主题（如 `watch`、`do pull`、`check diff/log/review`）均不再支持。

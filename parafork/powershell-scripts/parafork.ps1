@@ -23,22 +23,18 @@ Usage:
 
 Commands:
   help [debug|--debug]
-  init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
+  init [--new|--reuse] [--yes] [--i-am-maintainer]
   do <action> [args...]
   check [topic] [args...]
-  merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
+  merge [--message "<msg>"] [--yes] [--i-am-maintainer]
 
 check topics:
   merge [--strict]
   status    (default)
-  diff
-  log [--limit <n>]
-  review
 
 do actions:
   exec [--loop] [--interval <sec>] [--strict]
   commit --message "<msg>" [--no-check]
-  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
 Notes:
   - Default (no cmd): init --new + do exec
@@ -146,6 +142,25 @@ function ParaforkGuardWorktree {
     return $null
   }
 
+  $lockEnabled = ParaforkSymbolGet $symbolPath 'WORKTREE_LOCK'
+  $lockOwner = ParaforkSymbolGet $symbolPath 'WORKTREE_LOCK_OWNER'
+  $agentId = ParaforkAgentId
+
+  if ($lockEnabled -ne '1' -or [string]::IsNullOrEmpty($lockOwner)) {
+    ParaforkWriteWorktreeLock $symbolPath
+    $lockEnabled = '1'
+    $lockOwner = $agentId
+  }
+
+  if ($lockEnabled -eq '1' -and $lockOwner -ne $agentId) {
+    Write-Output 'REFUSED: worktree locked by another agent'
+    ParaforkPrintKv 'LOCK_OWNER' $lockOwner
+    ParaforkPrintKv 'AGENT_ID' $agentId
+    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; PARAFORK_APPROVE_REUSE=1 " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' $next
+    return $null
+  }
+
   $baseRootValue = ParaforkSymbolGet $symbolPath 'BASE_ROOT'
   return @{
     Ok          = $true
@@ -162,11 +177,6 @@ function EnsureWorktreeUsed {
     [Parameter(Mandatory = $true)][string]$SymbolPath
   )
 
-  $used = ParaforkSymbolGet $SymbolPath 'WORKTREE_USED'
-  if ($used -eq '1') {
-    return
-  }
-
   $body = {
     $ok = ParaforkSymbolSet $SymbolPath 'WORKTREE_USED' '1'
     if (-not $ok) {
@@ -182,10 +192,6 @@ function EnsureWorktreeUsed {
 
 function InitNewWorktree {
   param(
-    [string]$BaseBranchOverride = $null,
-    [string]$RemoteOverride = $null,
-    [bool]$NoRemote = $false,
-    [bool]$NoFetch = $false,
     [bool]$Yes = $false,
     [bool]$Iam = $false
   )
@@ -213,60 +219,17 @@ function InitNewWorktree {
     ParaforkDie "missing config: $configPath (parafork skill package incomplete?)"
   }
 
-  $configBaseBranch = ParaforkTomlGetStr $configPath 'base' 'branch' 'main'
-  $configRemoteName = ParaforkTomlGetStr $configPath 'remote' 'name' ''
-  $configRemoteAutosync = ParaforkTomlGetBool $configPath 'remote' 'autosync' 'false'
+  $baseBranch = ParaforkTomlGetStr $configPath 'base' 'branch' 'main'
   $workdirRoot = ParaforkTomlGetStr $configPath 'workdir' 'root' '.parafork'
   $workdirRule = ParaforkTomlGetStr $configPath 'workdir' 'rule' '{YYMMDD}-{HEX4}'
   $autoplan = ParaforkTomlGetBool $configPath 'custom' 'autoplan' 'false'
 
-  $baseBranchSource = 'config'
-  $baseBranch = $configBaseBranch
-  if ($BaseBranchOverride) {
-    $baseBranchSource = 'cli'
-    $baseBranch = $BaseBranchOverride
-  }
-
-  $remoteNameSource = 'config'
-  $remoteName = $configRemoteName
-  $remoteAutosyncSource = 'config'
-  $remoteAutosync = $configRemoteAutosync
-  if ($NoRemote) {
-    $remoteNameSource = 'none'
-    $remoteName = ''
-  } elseif ($RemoteOverride) {
-    $remoteNameSource = 'cli'
-    $remoteName = $RemoteOverride
-  } elseif ([string]::IsNullOrEmpty($remoteName)) {
-    $remoteNameSource = 'none'
-  }
-
-  $remoteAvailable = ParaforkIsRemoteAvailable $baseRoot $remoteName
-  $remoteSyncEnabled = ($remoteAvailable -and $remoteAutosync -eq 'true')
-
-  if ($remoteSyncEnabled -and $NoFetch) {
-    ParaforkRequireYesIam '--no-fetch' $Yes $Iam
-  }
-
-  if ($remoteSyncEnabled -and -not $NoFetch) {
-    & git -C $baseRoot fetch $remoteName
-    if ($LASTEXITCODE -ne 0) {
-      ParaforkDie "git fetch failed: $remoteName"
-    }
-  }
-
-  if ($remoteAutosync -ne 'true') {
-    $baseChanges = (& git -C $baseRoot status --porcelain 2>$null | Measure-Object).Count
-    if ($baseChanges -ne 0) {
-      Write-Output ("WARN: base repo has uncommitted changes; init uses committed local '{0}' only" -f $baseBranch)
-    }
+  $baseChanges = (& git -C $baseRoot status --porcelain 2>$null | Measure-Object).Count
+  if ($baseChanges -ne 0) {
+    Write-Output ("WARN: base repo has uncommitted changes; init uses committed local '{0}' only" -f $baseBranch)
   }
 
   $worktreeStartPoint = $baseBranch
-  if ($remoteSyncEnabled -and -not $NoFetch) {
-    $worktreeStartPoint = "$remoteName/$baseBranch"
-  }
-
   $null = & git -C $baseRoot rev-parse --verify "$worktreeStartPoint^{commit}" 2>$null
   if ($LASTEXITCODE -ne 0) {
     ParaforkDie "invalid WORKTREE_START_POINT: $worktreeStartPoint"
@@ -309,17 +272,11 @@ function InitNewWorktree {
       ("BASE_ROOT={0}" -f $baseRoot)
       ("WORKTREE_ROOT={0}" -f $worktreeRoot)
       ("WORKTREE_BRANCH={0}" -f $worktreeBranch)
-      ("WORKTREE_START_POINT={0}" -f $worktreeStartPoint)
       'WORKTREE_USED=1'
       'WORKTREE_LOCK=1'
       ("WORKTREE_LOCK_OWNER={0}" -f (ParaforkAgentId))
       ("WORKTREE_LOCK_AT={0}" -f $createdAt)
       ("BASE_BRANCH={0}" -f $baseBranch)
-      ("REMOTE_NAME={0}" -f $remoteName)
-      ("REMOTE_AUTOSYNC={0}" -f $remoteAutosync)
-      ("BASE_BRANCH_SOURCE={0}" -f $baseBranchSource)
-      ("REMOTE_NAME_SOURCE={0}" -f $remoteNameSource)
-      ("REMOTE_AUTOSYNC_SOURCE={0}" -f $remoteAutosyncSource)
       ("CREATED_AT={0}" -f $createdAt)
     ) -join "`n"
 
@@ -366,10 +323,15 @@ function InitNewWorktree {
       Copy-Item -LiteralPath $src -Destination $dst
     }
 
+    $startCommit = (& git -C $worktreeRoot rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
+    $baseCommit = (& git -C $baseRoot rev-parse --short $worktreeStartPoint 2>$null | Select-Object -First 1).Trim()
+
     Write-Output 'MODE=new'
     ParaforkPrintKv 'AUTOPLAN' $autoplan
     ParaforkPrintKv 'WORKTREE_ROOT' $worktreeRoot
     ParaforkPrintKv 'WORKTREE_START_POINT' $worktreeStartPoint
+    ParaforkPrintKv 'START_COMMIT' $startCommit
+    ParaforkPrintKv 'BASE_COMMIT' $baseCommit
   }
 
   $null = ParaforkInvokeLogged $worktreeRoot 'parafork init' @('--new') $body
@@ -394,7 +356,6 @@ function DoStatus {
     $worktreeId = 'UNKNOWN'
   }
   $baseBranch = ParaforkSymbolGet $symbolPath 'BASE_BRANCH'
-  $remoteName = ParaforkSymbolGet $symbolPath 'REMOTE_NAME'
   $worktreeBranch = ParaforkSymbolGet $symbolPath 'WORKTREE_BRANCH'
 
   $branch = (& git rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1).Trim()
@@ -413,7 +374,6 @@ function DoStatus {
   ParaforkPrintKv 'HEAD' $head
   ParaforkPrintKv 'CHANGES' $changes
   ParaforkPrintKv 'BASE_BRANCH' $baseBranch
-  ParaforkPrintKv 'REMOTE_NAME' $remoteName
   ParaforkPrintKv 'WORKTREE_BRANCH' $worktreeBranch
 
   if ($PrintBlock) {
@@ -468,69 +428,70 @@ function DoCheck {
 
   foreach ($f in $requiredFiles) {
     if (-not (Test-Path -LiteralPath $f -PathType Leaf)) {
-      $errors.Add(("missing file: {0}" -f $f))
+      $errors.Add("missing file: $f")
     }
   }
 
   if ($autoplan -eq 'true' -and $autoformat -eq 'true' -and (Test-Path -LiteralPath $planFile -PathType Leaf)) {
-    if (-not (Select-String -LiteralPath $planFile -SimpleMatch '## Milestones' -Quiet)) {
+    $planText = [System.IO.File]::ReadAllText($planFile)
+    if ($planText -notmatch '(?m)^##\s+Milestones\b') {
       $errors.Add('Plan.md missing heading: ## Milestones')
     }
-    if (-not (Select-String -LiteralPath $planFile -SimpleMatch '## Tasks' -Quiet)) {
+    if ($planText -notmatch '(?m)^##\s+Tasks\b') {
       $errors.Add('Plan.md missing heading: ## Tasks')
     }
-    if (-not (Select-String -LiteralPath $planFile -Pattern '^- \\[.\\] ' -Quiet)) {
+    if ($planText -notmatch '(?m)^- \[.\] ') {
       $errors.Add('Plan.md has no checkboxes')
     }
-    if ($Phase -eq 'merge') {
-      if (Select-String -LiteralPath $planFile -Pattern '^- \\[ \\] T[0-9]+' -Quiet) {
-        $errors.Add('Plan.md has incomplete tasks (merge phase requires tasks done)')
-      }
+
+    if ($Phase -eq 'merge' -and $planText -match '(?m)^- \[ \] T[0-9]+') {
+      $errors.Add('Plan.md has incomplete tasks (merge phase requires tasks done)')
     }
   }
 
   if ($autoformat -eq 'true' -and (Test-Path -LiteralPath $mergeFile -PathType Leaf)) {
-    if (-not (Select-String -LiteralPath $mergeFile -Pattern 'Acceptance|Repro' -CaseSensitive:$false -Quiet)) {
+    $mergeText = [System.IO.File]::ReadAllText($mergeFile)
+    if ($mergeText -notmatch '(?i)Acceptance|Repro') {
       $errors.Add('Merge.md missing Acceptance/Repro section keywords')
     }
   }
 
   if ($Phase -eq 'merge' -or $Strict) {
     foreach ($f in @($execFile, $mergeFile)) {
-      if ((Test-Path -LiteralPath $f -PathType Leaf) -and (Select-String -LiteralPath $f -Pattern 'PARAFORK_TBD|TODO_TBD' -Quiet)) {
-        $errors.Add(("placeholder remains: {0}" -f $f))
+      if (Test-Path -LiteralPath $f -PathType Leaf) {
+        $t = [System.IO.File]::ReadAllText($f)
+        if ($t -match 'PARAFORK_TBD|TODO_TBD') {
+          $errors.Add("placeholder remains: $f")
+        }
       }
     }
-
-    if ($autoplan -eq 'true' -and (Test-Path -LiteralPath $planFile -PathType Leaf) -and (Select-String -LiteralPath $planFile -Pattern 'PARAFORK_TBD|TODO_TBD' -Quiet)) {
-      $errors.Add(("placeholder remains: {0}" -f $planFile))
+    if ($autoplan -eq 'true' -and (Test-Path -LiteralPath $planFile -PathType Leaf)) {
+      $pt = [System.IO.File]::ReadAllText($planFile)
+      if ($pt -match 'PARAFORK_TBD|TODO_TBD') {
+        $errors.Add("placeholder remains: $planFile")
+      }
     }
   }
 
   if ($Phase -eq 'merge') {
-    $trackedParadoc = & git ls-files -- 'paradoc/' 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      ParaforkDie 'git ls-files failed'
-    }
-    if ($trackedParadoc -and ($trackedParadoc | Measure-Object).Count -gt 0) {
-      $errors.Add("git pollution: tracked files under paradoc/ (must be empty: git ls-files -- 'paradoc/')")
-    }
-
-    $trackedSymbol = & git ls-files -- '.worktree-symbol' 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      ParaforkDie 'git ls-files failed'
-    }
-    if ($trackedSymbol -and ($trackedSymbol | Measure-Object).Count -gt 0) {
-      $errors.Add("git pollution: .worktree-symbol is tracked (must be empty: git ls-files -- '.worktree-symbol')")
+    $trackedParadoc = (& git ls-files -- 'paradoc/' 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $trackedParadoc) {
+      if (($trackedParadoc | Measure-Object).Count -gt 0) {
+        $errors.Add("git pollution: tracked files under paradoc/ (must be empty: git ls-files -- 'paradoc/')")
+      }
     }
 
-    $staged = & git diff --cached --name-only -- 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      ParaforkDie 'git diff --cached failed'
+    $trackedSymbol = (& git ls-files -- '.worktree-symbol' 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $trackedSymbol) {
+      if (($trackedSymbol | Measure-Object).Count -gt 0) {
+        $errors.Add("git pollution: .worktree-symbol is tracked (must be empty: git ls-files -- '.worktree-symbol')")
+      }
     }
-    if ($staged) {
-      $pollution = $staged | Where-Object { $_ -match '^(paradoc/|\\.worktree-symbol$)' }
-      if ($pollution -and ($pollution | Measure-Object).Count -gt 0) {
+
+    $staged = (& git diff --cached --name-only -- 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $staged) {
+      $polluted = $staged | Where-Object { $_ -match '^(paradoc/|\.worktree-symbol$)' }
+      if ($polluted -and ($polluted | Measure-Object).Count -gt 0) {
         $errors.Add('git pollution: staged includes paradoc/ or .worktree-symbol')
       }
     }
@@ -553,7 +514,6 @@ function DoReview {
 
   $pwdNow = (Get-Location).Path
   $symbolPath = Join-Path $pwdNow '.worktree-symbol'
-
   $worktreeId = ParaforkSymbolGet $symbolPath 'WORKTREE_ID'
   if ([string]::IsNullOrEmpty($worktreeId)) {
     $worktreeId = 'UNKNOWN'
@@ -563,13 +523,13 @@ function DoReview {
   $worktreeBranch = ParaforkSymbolGet $symbolPath 'WORKTREE_BRANCH'
 
   Write-Output '### Review material (copy into paradoc/Merge.md)'
-  Write-Output ""
+  Write-Output ''
   Write-Output ("#### Commits ({0}..{1})" -f $baseBranch, $worktreeBranch)
   & git log --oneline "$baseBranch..$worktreeBranch" 2>$null | ForEach-Object { $_ }
-  Write-Output ""
+  Write-Output ''
   Write-Output ("#### Files ({0}...{1})" -f $baseBranch, $worktreeBranch)
   & git diff --name-status "$baseBranch...$worktreeBranch" 2>$null | ForEach-Object { $_ }
-  Write-Output ""
+  Write-Output ''
   Write-Output '#### Notes'
   Write-Output '- Ensure Merge.md contains Acceptance / Repro steps.'
   Write-Output '- Mention risks and rollback plan if relevant.'
@@ -582,20 +542,33 @@ function DoReview {
 function CmdHelp {
   param([string[]]$CmdArgs = @())
 
-  if ($CmdArgs.Count -gt 0) {
-    $topic = $CmdArgs[0]
-    if ($topic -eq 'debug' -or $topic -eq '--debug') {
+  if ($null -eq $CmdArgs) {
+    $CmdArgs = @()
+  }
+
+  $topic = if ($CmdArgs.Count -gt 0) { $CmdArgs[0] } else { '' }
+  switch ($topic) {
+    '' {
+      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'PASS' (ParaforkEntryCmd @())
+      Write-Output (ParaforkUsage)
+      return 0
+    }
+    'debug' {
       if ($CmdArgs.Count -gt 1) {
         ParaforkDie ("unknown arg for help debug: {0}" -f $CmdArgs[1])
       }
       return (CmdDebug)
     }
-    ParaforkDie ("unknown help topic: {0}" -f $topic)
+    '--debug' {
+      if ($CmdArgs.Count -gt 1) {
+        ParaforkDie ("unknown arg for help --debug: {0}" -f $CmdArgs[1])
+      }
+      return (CmdDebug)
+    }
+    default {
+      ParaforkDie ("unknown help topic: {0}" -f $topic)
+    }
   }
-
-  ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'PASS' (ParaforkEntryCmd @())
-  Write-Output (ParaforkUsage)
-  return 0
 }
 
 function CmdDebug {
@@ -687,10 +660,6 @@ function CmdInit {
   if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $mode = 'auto' # auto|new|reuse
-  $baseBranchOverride = $null
-  $remoteOverride = $null
-  $noRemote = $false
-  $noFetch = $false
   $yes = $false
   $iam = $false
 
@@ -713,32 +682,6 @@ function CmdInit {
         $i++
         continue
       }
-      '--base-branch' {
-        if ($i + 1 -ge $CmdArgs.Count) {
-          ParaforkDie 'missing value for --base-branch'
-        }
-        $baseBranchOverride = $CmdArgs[$i + 1]
-        $i += 2
-        continue
-      }
-      '--remote' {
-        if ($i + 1 -ge $CmdArgs.Count) {
-          ParaforkDie 'missing value for --remote'
-        }
-        $remoteOverride = $CmdArgs[$i + 1]
-        $i += 2
-        continue
-      }
-      '--no-remote' {
-        $noRemote = $true
-        $i++
-        continue
-      }
-      '--no-fetch' {
-        $noFetch = $true
-        $i++
-        continue
-      }
       '--yes' {
         $yes = $true
         $i++
@@ -753,13 +696,13 @@ function CmdInit {
         Write-Output ("
 Usage: $ENTRY_CMD init [--new|--reuse] [options]
 
+Entry behavior:
+  - In base repo: no args defaults to --new
+  - Inside a worktree: no args FAIL (must choose --reuse or --new)
+
 Options:
   --new                    Create a new worktree session
   --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
-  --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
-  --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
-  --no-remote              Force REMOTE_NAME empty for this session
-  --no-fetch               Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --yes                    Confirmation gate for risky flags
   --i-am-maintainer        Confirmation gate for risky flags
 ")
@@ -769,13 +712,13 @@ Options:
         Write-Output ("
 Usage: $ENTRY_CMD init [--new|--reuse] [options]
 
+Entry behavior:
+  - In base repo: no args defaults to --new
+  - Inside a worktree: no args FAIL (must choose --reuse or --new)
+
 Options:
   --new                    Create a new worktree session
   --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
-  --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
-  --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
-  --no-remote              Force REMOTE_NAME empty for this session
-  --no-fetch               Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --yes                    Confirmation gate for risky flags
   --i-am-maintainer        Confirmation gate for risky flags
 ")
@@ -818,7 +761,7 @@ Options:
     ParaforkPrintKv 'WORKTREE_ROOT' $symbolWorktreeRoot
     ParaforkPrintKv 'BASE_ROOT' $symbolBaseRoot
     Write-Output ""
-    Write-Output "Choose one:"
+    Write-Output 'Choose one:'
     Write-Output ("- Reuse current worktree: {0}" -f ('PARAFORK_APPROVE_REUSE=1 ' + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))))
     Write-Output ("- Create new worktree:    {0}" -f (ParaforkEntryCmd @('init', '--new')))
     ParaforkPrintOutputBlock $wtId $invocationPwd 'FAIL' (ParaforkEntryCmd @('init', '--new'))
@@ -835,10 +778,6 @@ Options:
   }
 
   if ($mode -eq 'reuse') {
-    if ($baseBranchOverride -or $remoteOverride -or $noRemote -or $noFetch) {
-      ParaforkDie '--reuse cannot be combined with worktree creation options'
-    }
-
     if ([string]::IsNullOrEmpty($symbolBaseRoot)) {
       ParaforkDie "missing BASE_ROOT in .worktree-symbol: $symbolPath"
     }
@@ -873,7 +812,7 @@ Options:
     $null = Set-Location -LiteralPath $symbolBaseRoot
   }
 
-  $createdRaw = @(InitNewWorktree -BaseBranchOverride $baseBranchOverride -RemoteOverride $remoteOverride -NoRemote:$noRemote -NoFetch:$noFetch -Yes:$yes -Iam:$iam)
+  $createdRaw = @(InitNewWorktree -Yes:$yes -Iam:$iam)
   $created = $null
   foreach ($item in $createdRaw) {
     if ($item -is [hashtable]) {
@@ -961,15 +900,16 @@ Usage: $ENTRY_CMD check [topic] [args...]
 Topics:
   merge [--strict]
   status    (default)
-  diff
-  log [--limit <n>]
-  review
 ")
         return 0
       }
       '-h' {
         Write-Output ("
 Usage: $ENTRY_CMD check [topic] [args...]
+
+Topics:
+  merge [--strict]
+  status    (default)
 ")
         return 0
       }
@@ -1003,24 +943,6 @@ Usage: $ENTRY_CMD check [topic] [args...]
         ParaforkDie ("unknown arg: {0}" -f $rest[0])
       }
       $code = CmdCheckStatus
-      return $code
-    }
-    'diff' {
-      if ($rest.Count -gt 0) {
-        ParaforkDie ("unknown arg: {0}" -f $rest[0])
-      }
-      $code = CmdCheckDiff
-      return $code
-    }
-    'log' {
-      $code = CmdCheckLog -CmdArgs $rest
-      return $code
-    }
-    'review' {
-      if ($rest.Count -gt 0) {
-        ParaforkDie ("unknown arg: {0}" -f $rest[0])
-      }
-      $code = CmdCheckReview
       return $code
     }
     default {
@@ -1078,7 +1000,7 @@ function CmdDoExec {
     DoStatus $false
     if (-not (DoCheck -Phase 'exec' -Strict:$strict -Mode 'do')) {
       ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('do', 'exec')))
-      throw 'exec check failed'
+      throw 'check failed'
     }
 
     $changes = (& git status --porcelain 2>$null | Measure-Object).Count
@@ -1089,14 +1011,19 @@ function CmdDoExec {
     }
   }
 
+  if (-not $loop) {
+    try {
+      & $execOnce
+      return 0
+    } catch {
+      return 1
+    }
+  }
+
   try {
     & $execOnce
   } catch {
     return 1
-  }
-
-  if (-not $loop) {
-    return 0
   }
 
   $lastHead = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
@@ -1195,7 +1122,7 @@ function CmdDoCommit {
       ParaforkDie 'git diff --cached failed'
     }
     if ($staged) {
-      $pollution = $staged | Where-Object { $_ -match '^(paradoc/|\\.worktree-symbol$)' }
+      $pollution = $staged | Where-Object { $_ -match '^(paradoc/|\.worktree-symbol$)' }
       if ($pollution -and ($pollution | Measure-Object).Count -gt 0) {
         Write-Output 'REFUSED: git pollution staged'
         Write-Output "HINT: ensure worktree exclude contains '/paradoc/' and '/.worktree-symbol'"
@@ -1225,196 +1152,6 @@ function CmdDoCommit {
   return 0
 }
 
-function CmdDoPull {
-  param([string[]]$CmdArgs = @())
-
-  if ($null -eq $CmdArgs) { $CmdArgs = @() }
-
-  $strategy = 'ff-only'
-  $noFetch = $false
-  $allowDrift = $false
-  $yes = $false
-  $iam = $false
-
-  for ($i = 0; $i -lt $CmdArgs.Count; ) {
-    $a = $CmdArgs[$i]
-    switch ($a) {
-      '--strategy' {
-        if ($i + 1 -ge $CmdArgs.Count) {
-          ParaforkDie 'missing value for --strategy'
-        }
-        $strategy = $CmdArgs[$i + 1]
-        $i += 2
-        continue
-      }
-      '--no-fetch' {
-        $noFetch = $true
-        $i++
-        continue
-      }
-      '--allow-config-drift' {
-        $allowDrift = $true
-        $i++
-        continue
-      }
-      '--yes' {
-        $yes = $true
-        $i++
-        continue
-      }
-      '--i-am-maintainer' {
-        $iam = $true
-        $i++
-        continue
-      }
-      '--help' {
-        Write-Output ("
-Usage: $ENTRY_CMD do pull [options]
-
-Default: ff-only (refuse if not fast-forward)
-
-High-risk strategies require approval + CLI gates:
-- rebase: PARAFORK_APPROVE_PULL_REBASE=1 (or git config parafork.approval.pull.rebase=true) + --yes --i-am-maintainer
-- merge:  PARAFORK_APPROVE_PULL_MERGE=1  (or git config parafork.approval.pull.merge=true)  + --yes --i-am-maintainer
-
-Options:
-  --strategy ff-only|rebase|merge
-  --no-fetch                 Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
-  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
-  --yes --i-am-maintainer    Confirmation gates for risky flags
-")
-        return 0
-      }
-      '-h' {
-        Write-Output ("
-Usage: $ENTRY_CMD do pull [options]
-
-Default: ff-only (refuse if not fast-forward)
-
-Options:
-  --strategy ff-only|rebase|merge
-  --no-fetch                 Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
-  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
-  --yes --i-am-maintainer    Confirmation gates for risky flags
-")
-        return 0
-      }
-      default {
-        ParaforkDie ("unknown arg: {0}" -f $a)
-      }
-    }
-  }
-
-  if ($strategy -ne 'ff-only' -and $strategy -ne 'rebase' -and $strategy -ne 'merge') {
-    ParaforkDie ("invalid --strategy: {0}" -f $strategy)
-  }
-
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
-  }
-
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
-  $pwdNow = (Get-Location).Path
-  $symbolPath = Join-Path $pwdNow '.worktree-symbol'
-
-  $worktreeId = $guard.WorktreeId
-  $baseRoot = ParaforkSymbolGet $symbolPath 'BASE_ROOT'
-  $baseBranch = ParaforkSymbolGet $symbolPath 'BASE_BRANCH'
-  $remoteName = ParaforkSymbolGet $symbolPath 'REMOTE_NAME'
-
-  $allowDriftStr = if ($allowDrift) { 'true' } else { 'false' }
-
-  $body = {
-    if (-not [string]::IsNullOrEmpty($baseRoot)) {
-      ParaforkCheckConfigDrift $allowDriftStr $yes $iam $symbolPath
-    }
-
-    $remoteAutosync = ParaforkRemoteAutosyncFromSymbolOrConfig $baseRoot $symbolPath
-    $remoteAvailable = $false
-    if (-not [string]::IsNullOrEmpty($baseRoot) -and (ParaforkIsRemoteAvailable $baseRoot $remoteName)) {
-      $remoteAvailable = $true
-    }
-    $remoteSyncEnabled = ($remoteAvailable -and $remoteAutosync -eq 'true')
-
-    if ($remoteSyncEnabled -and $noFetch) {
-      ParaforkRequireYesIam '--no-fetch' $yes $iam
-    }
-
-    $upstream = $baseBranch
-    if ($remoteSyncEnabled -and -not $noFetch) {
-      & git -C $baseRoot fetch $remoteName
-      if ($LASTEXITCODE -ne 0) {
-        ParaforkDie "git fetch failed: $remoteName"
-      }
-      $upstream = "$remoteName/$baseBranch"
-    }
-
-    ParaforkPrintKv 'STRATEGY' $strategy
-    ParaforkPrintKv 'UPSTREAM' $upstream
-
-    $approveRebase = $false
-    if ($env:PARAFORK_APPROVE_PULL_REBASE -eq '1') {
-      $approveRebase = $true
-    } elseif ($baseRoot) {
-      $v = (& git -C $baseRoot config --bool --default false parafork.approval.pull.rebase 2>$null | Select-Object -First 1).Trim()
-      if ($v -eq 'true') {
-        $approveRebase = $true
-      }
-    }
-
-    $approveMerge = $false
-    if ($env:PARAFORK_APPROVE_PULL_MERGE -eq '1') {
-      $approveMerge = $true
-    } elseif ($baseRoot) {
-      $v = (& git -C $baseRoot config --bool --default false parafork.approval.pull.merge 2>$null | Select-Object -First 1).Trim()
-      if ($v -eq 'true') {
-        $approveMerge = $true
-      }
-    }
-
-    if ($strategy -eq 'rebase') {
-      if (-not $approveRebase) {
-        Write-Output 'REFUSED: pull rebase not approved'
-        ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'ask maintainer then rerun with PARAFORK_APPROVE_PULL_REBASE=1 and --yes --i-am-maintainer'
-        throw 'pull rebase not approved'
-      }
-      ParaforkRequireYesIam '--strategy rebase' $yes $iam
-      & git rebase $upstream
-      if ($LASTEXITCODE -ne 0) {
-        Write-Output 'REFUSED: rebase stopped (likely conflicts)'
-        ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'resolve then git rebase --continue (or git rebase --abort)'
-        throw 'rebase failed'
-      }
-    } elseif ($strategy -eq 'merge') {
-      if (-not $approveMerge) {
-        Write-Output 'REFUSED: pull merge not approved'
-        ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'ask maintainer then rerun with PARAFORK_APPROVE_PULL_MERGE=1 and --yes --i-am-maintainer'
-        throw 'pull merge not approved'
-      }
-      ParaforkRequireYesIam '--strategy merge' $yes $iam
-      & git merge --no-ff $upstream
-      if ($LASTEXITCODE -ne 0) {
-        Write-Output 'REFUSED: merge stopped (likely conflicts)'
-        ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'resolve then git merge --continue (or git merge --abort)'
-        throw 'merge failed'
-      }
-    } else {
-      & git merge --ff-only $upstream
-      if ($LASTEXITCODE -ne 0) {
-        Write-Output 'REFUSED: cannot fast-forward'
-        ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'ask maintainer to approve rebase/merge strategy'
-        throw 'ff-only failed'
-      }
-    }
-
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
-  }
-
-  ParaforkInvokeLogged $guard.WorktreeRoot 'parafork do pull' @('--strategy', $strategy) $body
-  return 0
-}
-
 function CmdDo {
   param([string[]]$CmdArgs = @())
 
@@ -1427,7 +1164,6 @@ Usage: $ENTRY_CMD do <action> [args...]
 Actions:
   exec [--loop] [--interval <sec>] [--strict]
   commit --message ""<msg>"" [--no-check]
-  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 ")
     return 0
   }
@@ -1438,100 +1174,8 @@ Actions:
   switch ($action) {
     'exec' { $code = CmdDoExec @rest; return $code }
     'commit' { $code = CmdDoCommit @rest; return $code }
-    'pull' { $code = CmdDoPull @rest; return $code }
     default { ParaforkDie ("unknown action: {0}" -f $action) }
   }
-}
-
-function CmdCheckDiff {
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
-  }
-
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
-  $pwdNow = (Get-Location).Path
-  $symbolPath = Join-Path $pwdNow '.worktree-symbol'
-
-  $worktreeId = $guard.WorktreeId
-  $baseBranch = ParaforkSymbolGet $symbolPath 'BASE_BRANCH'
-
-  $body = {
-    Write-Output ("DIFF_RANGE={0}...HEAD" -f $baseBranch)
-    & git diff --stat "$baseBranch...HEAD" 2>$null | ForEach-Object { $_ }
-    Write-Output ""
-    & git diff "$baseBranch...HEAD" 2>$null | ForEach-Object { $_ }
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
-  }
-
-  ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check diff' @() $body
-  return 0
-}
-
-function CmdCheckLog {
-  param([string[]]$CmdArgs = @())
-
-  if ($null -eq $CmdArgs) { $CmdArgs = @() }
-
-  $limit = 20
-  for ($i = 0; $i -lt $CmdArgs.Count; ) {
-    $a = $CmdArgs[$i]
-    switch ($a) {
-      '--limit' {
-        if ($i + 1 -ge $CmdArgs.Count) {
-          ParaforkDie 'missing value for --limit'
-        }
-        $parsed = 0
-        $ok = [int]::TryParse($CmdArgs[$i + 1], [ref]$parsed)
-        if (-not $ok -or $parsed -lt 1) {
-          ParaforkDie ("invalid --limit: {0}" -f $CmdArgs[$i + 1])
-        }
-        $limit = $parsed
-        $i += 2
-        continue
-      }
-      '--help' {
-        Write-Output "Usage: $ENTRY_CMD check log [--limit <n>]"
-        return 0
-      }
-      '-h' {
-        Write-Output "Usage: $ENTRY_CMD check log [--limit <n>]"
-        return 0
-      }
-      default {
-        ParaforkDie ("unknown arg: {0}" -f $a)
-      }
-    }
-  }
-
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
-  }
-
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
-  $pwdNow = (Get-Location).Path
-  $worktreeId = $guard.WorktreeId
-
-  $body = {
-    & git log --oneline --decorate -n $limit 2>$null | ForEach-Object { $_ }
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
-  }
-
-  ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check log' @('--limit', "$limit") $body
-  return 0
-}
-
-function CmdCheckReview {
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
-  }
-
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
-  $body = { DoReview $true }
-  ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check review' @() $body
-  return 0
 }
 
 function CmdMerge {
@@ -1541,8 +1185,6 @@ function CmdMerge {
 
   $yes = $false
   $iam = $false
-  $noFetch = $false
-  $allowDrift = $false
   $message = $null
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
@@ -1555,16 +1197,6 @@ function CmdMerge {
       }
       '--i-am-maintainer' {
         $iam = $true
-        $i++
-        continue
-      }
-      '--no-fetch' {
-        $noFetch = $true
-        $i++
-        continue
-      }
-      '--allow-config-drift' {
-        $allowDrift = $true
         $i++
         continue
       }
@@ -1586,8 +1218,6 @@ Preview-only unless all gates are satisfied:
 
 Options:
   --message ""<msg>""         Override merge commit message (squash mode)
-  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
-  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
 ")
         return 0
       }
@@ -1601,8 +1231,6 @@ Preview-only unless all gates are satisfied:
 
 Options:
   --message ""<msg>""         Override merge commit message (squash mode)
-  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
-  --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
 ")
         return 0
       }
@@ -1624,31 +1252,13 @@ Options:
   $worktreeId = $guard.WorktreeId
   $baseRoot = ParaforkSymbolGet $symbolPath 'BASE_ROOT'
   $baseBranch = ParaforkSymbolGet $symbolPath 'BASE_BRANCH'
-  $remoteName = ParaforkSymbolGet $symbolPath 'REMOTE_NAME'
   $worktreeBranch = ParaforkSymbolGet $symbolPath 'WORKTREE_BRANCH'
-
-  $allowDriftStr = if ($allowDrift) { 'true' } else { 'false' }
 
   if ([string]::IsNullOrEmpty($message)) {
     $message = "parafork: merge $worktreeId"
   }
 
   $body = {
-    if (-not [string]::IsNullOrEmpty($baseRoot)) {
-      ParaforkCheckConfigDrift $allowDriftStr $yes $iam $symbolPath
-    }
-
-    $remoteAutosync = ParaforkRemoteAutosyncFromSymbolOrConfig $baseRoot $symbolPath
-    $remoteAvailable = $false
-    if ($baseRoot -and (ParaforkIsRemoteAvailable $baseRoot $remoteName)) {
-      $remoteAvailable = $true
-    }
-    $remoteSyncEnabled = ($remoteAvailable -and $remoteAutosync -eq 'true')
-
-    if ($remoteSyncEnabled -and $noFetch) {
-      ParaforkRequireYesIam '--no-fetch' $yes $iam
-    }
-
     $approved = $false
     if ($env:PARAFORK_APPROVE_MERGE -eq '1') {
       $approved = $true
@@ -1680,7 +1290,7 @@ Options:
     }
 
     $baseTrackedDirty = (& git -C $baseRoot status --porcelain --untracked-files=no 2>$null | Measure-Object).Count
-    $baseUntrackedCount = ((& git -C $baseRoot status --porcelain 2>$null) | Where-Object { $_ -match '^\\?\\?' } | Measure-Object).Count
+    $baseUntrackedCount = ((& git -C $baseRoot status --porcelain 2>$null) | Where-Object { $_ -match '^\?\?' } | Measure-Object).Count
 
     if ($baseTrackedDirty -ne 0) {
       Write-Output 'REFUSED: base repo not clean (tracked)'
@@ -1700,31 +1310,6 @@ Options:
       ParaforkPrintKv 'BASE_CURRENT_BRANCH' $baseCurrentBranch
       ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("cd " + (ParaforkQuotePs $baseRoot) + "; git checkout " + (ParaforkQuotePs $baseBranch))
       throw 'base branch mismatch'
-    }
-
-    if ($remoteSyncEnabled -and -not $noFetch) {
-      & git -C $baseRoot fetch $remoteName
-      if ($LASTEXITCODE -ne 0) {
-        ParaforkDie "git fetch failed: $remoteName"
-      }
-
-      $remoteBase = "$remoteName/$baseBranch"
-      $null = & git -C $baseRoot rev-parse --verify "$remoteBase^{commit}" 2>$null
-      if ($LASTEXITCODE -ne 0) {
-        ParaforkDie "missing remote base ref: $remoteBase"
-      }
-
-      & git -C $baseRoot merge --ff-only $remoteBase
-      if ($LASTEXITCODE -ne 0) {
-        Write-Output 'REFUSED: cannot fast-forward base to remote base'
-        ParaforkPrintKv 'REMOTE_BASE' $remoteBase
-        ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'resolve base/remote divergence manually, then retry'
-        throw 'base not ff-only'
-      }
-    } elseif ($remoteAvailable -and -not $remoteSyncEnabled) {
-      Write-Output 'WARN: remote.autosync=false; skip remote-base alignment and use local base'
-    } elseif ($remoteAvailable -and $noFetch) {
-      Write-Output 'WARN: --no-fetch used; merge may target an out-of-date base'
     }
 
     Write-Output ("PREVIEW_COMMITS={0}..{1}" -f $baseBranch, $worktreeBranch)
@@ -1779,7 +1364,6 @@ Options:
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork merge' $CmdArgs $body
   return 0
 }
-
 function CmdDefault {
   $pwdNow = (Get-Location).Path
   $symbolPath = ParaforkSymbolFindUpwards $pwdNow

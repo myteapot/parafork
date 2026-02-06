@@ -15,10 +15,9 @@
 - `parafork do <action> ...`
   - `do exec [--loop] [--interval <sec>] [--strict]`
   - `do commit --message "<msg>" [--no-check]`
-  - `do pull [--strategy ff-only|rebase|merge] ...`
 - `parafork check [topic] ...`
   - `check merge [--strict]`
-  - `check status|diff|log|review ...`
+  - `check status`
 - `parafork merge ...`（仅 maintainer；需双门闩）
 
 ## 默认入口
@@ -32,4 +31,4 @@
 
 ## 兼容性
 - 仅支持 canonical 顶层命令：`help/init/do/check/merge`。
-- `watch`、顶层 `debug`、`check exec`、`check plan` 均不再支持。
+- 非 Core-Lite 命令/主题（如 `watch`、`do pull`、`check diff/log/review`）均不再支持。

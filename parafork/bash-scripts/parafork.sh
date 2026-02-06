@@ -27,22 +27,18 @@ Usage:
 
 Commands:
   help [debug|--debug]
-  init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
+  init [--new|--reuse] [--yes] [--i-am-maintainer]
   do <action> [args...]
   check [topic] [args...]
-  merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
+  merge [--message "<msg>"] [--yes] [--i-am-maintainer]
 
 check topics:
   merge [--strict]
   status    (default)
-  diff
-  log [--limit <n>]
-  review
 
 do actions:
   exec [--loop] [--interval <sec>] [--strict]
   commit --message "<msg>" [--no-check]
-  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
 Notes:
   - Default (no cmd): init --new + do exec
@@ -144,13 +140,8 @@ cmd_debug() {
 
 cmd_init() {
   local invocation_pwd="$INVOCATION_PWD"
-  local original_args=("$@")
 
   local mode="auto" # auto|new|reuse
-  local base_branch_override=""
-  local remote_override=""
-  local no_remote="false"
-  local no_fetch="false"
   local yes="false"
   local iam="false"
 
@@ -168,22 +159,6 @@ cmd_init() {
           parafork_die "--new and --reuse are mutually exclusive"
         fi
         mode="reuse"
-        shift
-        ;;
-      --base-branch)
-        base_branch_override="${2:-}"
-        shift 2
-        ;;
-      --remote)
-        remote_override="${2:-}"
-        shift 2
-        ;;
-      --no-remote)
-        no_remote="true"
-        shift
-        ;;
-      --no-fetch)
-        no_fetch="true"
         shift
         ;;
       --yes)
@@ -205,10 +180,6 @@ Entry behavior:
 Options:
   --new                    Create a new worktree session
   --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
-  --base-branch <branch>   Override base branch for this session (untracked; recorded in .worktree-symbol)
-  --remote <name>          Override remote name for this session (untracked; recorded in .worktree-symbol)
-  --no-remote              Force REMOTE_NAME empty for this session
-  --no-fetch               Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --yes                    Confirmation gate for risky flags
   --i-am-maintainer        Confirmation gate for risky flags
 EOF
@@ -266,10 +237,6 @@ EOF
   fi
 
   if [[ "$mode" == "reuse" ]]; then
-    if [[ -n "$base_branch_override" || -n "$remote_override" || "$no_remote" == "true" || "$no_fetch" == "true" ]]; then
-      parafork_die "--reuse cannot be combined with worktree creation options"
-    fi
-
     if [[ -z "$symbol_base_root" ]]; then
       parafork_die "missing BASE_ROOT in .worktree-symbol: $symbol_path"
     fi
@@ -318,73 +285,26 @@ EOF
     parafork_die "missing config: $config_path (parafork skill package incomplete?)"
   fi
 
-  local config_base_branch config_remote_name config_remote_autosync workdir_root workdir_rule autoplan
-  config_base_branch="$(parafork_toml_get_str "$config_path" "base" "branch" "main")"
-  config_remote_name="$(parafork_toml_get_str "$config_path" "remote" "name" "")"
-  config_remote_autosync="$(parafork_toml_get_bool "$config_path" "remote" "autosync" "false")"
+  local base_branch workdir_root workdir_rule autoplan
+  base_branch="$(parafork_toml_get_str "$config_path" "base" "branch" "main")"
   workdir_root="$(parafork_toml_get_str "$config_path" "workdir" "root" ".parafork")"
   workdir_rule="$(parafork_toml_get_str "$config_path" "workdir" "rule" "{YYMMDD}-{HEX4}")"
-  autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "true")"
-
-  local base_branch_source="config"
-  local base_branch="$config_base_branch"
-  if [[ -n "$base_branch_override" ]]; then
-    base_branch_source="cli"
-    base_branch="$base_branch_override"
-  fi
-
-  local remote_name_source="config"
-  local remote_name="$config_remote_name"
-  local remote_autosync_source="config"
-  local remote_autosync="$config_remote_autosync"
-  if [[ "$no_remote" == "true" ]]; then
-    remote_name_source="none"
-    remote_name=""
-  elif [[ -n "$remote_override" ]]; then
-    remote_name_source="cli"
-    remote_name="$remote_override"
-  elif [[ -z "$remote_name" ]]; then
-    remote_name_source="none"
-  fi
+  autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "false")"
 
   mkdir -p "$base_root/$workdir_root"
 
-  local remote_available="false"
-  if parafork_is_remote_available "$base_root" "$remote_name"; then
-    remote_available="true"
-  fi
-
-  local remote_sync_enabled="false"
-  if [[ "$remote_available" == "true" && "$remote_autosync" == "true" ]]; then
-    remote_sync_enabled="true"
-  fi
-
-  if [[ "$remote_sync_enabled" == "true" && "$no_fetch" == "true" ]]; then
-    parafork_require_yes_i_am_maintainer_for_flag "--no-fetch" "$yes" "$iam"
-  fi
-
-  if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
-    git -C "$base_root" fetch "$remote_name"
-  fi
-
-  if [[ "$remote_autosync" != "true" ]]; then
-    local base_changes
-    base_changes="$(git -C "$base_root" status --porcelain | wc -l | tr -d ' ')"
-    if [[ "$base_changes" != "0" ]]; then
-      echo "WARN: base repo has uncommitted changes; init uses committed local '$base_branch' only"
-    fi
+  local base_changes
+  base_changes="$(git -C "$base_root" status --porcelain | wc -l | tr -d ' ')"
+  if [[ "$base_changes" != "0" ]]; then
+    echo "WARN: base repo has uncommitted changes; init uses committed local '$base_branch' only"
   fi
 
   local worktree_start_point="$base_branch"
-  if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
-    worktree_start_point="$remote_name/$base_branch"
-  fi
-
-  git -C "$base_root" rev-parse --verify "$worktree_start_point^{commit}" >/dev/null 2>&1 || \
-    parafork_die "invalid WORKTREE_START_POINT: $worktree_start_point"
+  git -C "$base_root" rev-parse --verify "$worktree_start_point^{commit}" >/dev/null 2>&1 ||     parafork_die "invalid WORKTREE_START_POINT: $worktree_start_point"
 
   hex4() {
-    od -An -N2 -tx1 /dev/urandom | tr -d ' \n' | tr '[:lower:]' '[:upper:]'
+    od -An -N2 -tx1 /dev/urandom | tr -d ' 
+' | tr '[:lower:]' '[:upper:]'
   }
 
   expand_rule() {
@@ -429,17 +349,11 @@ WORKTREE_ID=$worktree_id
 BASE_ROOT=$base_root
 WORKTREE_ROOT=$worktree_root
 WORKTREE_BRANCH=$worktree_branch
-WORKTREE_START_POINT=$worktree_start_point
 WORKTREE_USED=1
 WORKTREE_LOCK=1
 WORKTREE_LOCK_OWNER=$(parafork_agent_id)
 WORKTREE_LOCK_AT=$created_at
 BASE_BRANCH=$base_branch
-REMOTE_NAME=$remote_name
-REMOTE_AUTOSYNC=$remote_autosync
-BASE_BRANCH_SOURCE=$base_branch_source
-REMOTE_NAME_SOURCE=$remote_name_source
-REMOTE_AUTOSYNC_SOURCE=$remote_autosync_source
 CREATED_AT=$created_at
 EOF
 
@@ -505,11 +419,10 @@ do_status() {
   pwd="$(pwd -P)"
   local symbol_path="$pwd/.worktree-symbol"
 
-  local worktree_id worktree_root base_branch remote_name worktree_branch
+  local worktree_id worktree_root base_branch worktree_branch
   worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
   worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "$pwd")"
   base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-  remote_name="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME" || echo "")"
   worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
 
   local branch head changes
@@ -521,7 +434,6 @@ do_status() {
   parafork_print_kv HEAD "$head"
   parafork_print_kv CHANGES "$changes"
   parafork_print_kv BASE_BRANCH "$base_branch"
-  parafork_print_kv REMOTE_NAME "$remote_name"
   parafork_print_kv WORKTREE_BRANCH "$worktree_branch"
 
   if [[ "$print_block" == "true" ]]; then
@@ -561,13 +473,13 @@ do_check() {
   local merge_file="$worktree_root/paradoc/Merge.md"
   local log_file="$worktree_root/paradoc/Log.txt"
 
-  local config_path="" autoformat="true" autoplan="true"
+  local config_path="" autoformat="true" autoplan="false"
   if [[ -n "$base_root" ]]; then
     config_path="$(parafork_config_path_from_base "$base_root")"
   fi
   if [[ -n "$config_path" && -f "$config_path" ]]; then
     autoformat="$(parafork_toml_get_bool "$config_path" "custom" "autoformat" "true")"
-    autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "true")"
+    autoplan="$(parafork_toml_get_bool "$config_path" "custom" "autoplan" "false")"
   fi
   if [[ "$strict" == "true" ]]; then
     autoformat="true"
@@ -724,9 +636,6 @@ Usage: $ENTRY_CMD check [topic] [args...]
 Topics:
   merge [--strict]
   status    (default)
-  diff
-  log [--limit <n>]
-  review
 EOF
         exit 0
         ;;
@@ -745,9 +654,6 @@ EOF
   case "$topic" in
     merge) cmd_check_merge "$strict" "${rest[@]}" ;;
     status) cmd_check_status "${rest[@]}" ;;
-    diff) cmd_check_diff "${rest[@]}" ;;
-    log) cmd_check_log "${rest[@]}" ;;
-    review) cmd_check_review "${rest[@]}" ;;
     *) parafork_die "unknown topic: $topic" ;;
   esac
 }
@@ -912,155 +818,6 @@ EOF
   parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do commit" "$ENTRY_CMD do commit --message \"...\"" -- commit_body
 }
 
-cmd_do_pull() {
-  local strategy="ff-only"
-  local no_fetch="false"
-  local allow_drift="false"
-  local yes="false"
-  local iam="false"
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --strategy)
-        strategy="${2:-}"
-        shift 2
-        ;;
-      --no-fetch)
-        no_fetch="true"
-        shift
-        ;;
-      --allow-config-drift)
-        allow_drift="true"
-        shift
-        ;;
-      --yes)
-        yes="true"
-        shift
-        ;;
-      --i-am-maintainer)
-        iam="true"
-        shift
-        ;;
-      -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD do pull [options]
-
-Default: ff-only (refuse if not fast-forward)
-
-High-risk strategies require approval + CLI gates:
-- rebase: PARAFORK_APPROVE_PULL_REBASE=1 (or git config parafork.approval.pull.rebase=true) + --yes --i-am-maintainer
-- merge:  PARAFORK_APPROVE_PULL_MERGE=1  (or git config parafork.approval.pull.merge=true)  + --yes --i-am-maintainer
-
-Options:
-  --strategy ff-only|rebase|merge
-  --no-fetch                 Skip remote fetch (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
-  --allow-config-drift        Override session config drift checks (requires --yes --i-am-maintainer)
-  --yes --i-am-maintainer     Confirmation gates for risky flags
-EOF
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
-    esac
-  done
-
-  case "$strategy" in
-    ff-only|rebase|merge) ;;
-    *) parafork_die "invalid --strategy: $strategy" ;;
-  esac
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  pull_body() {
-    local pwd worktree_id symbol_path worktree_root base_root base_branch remote_name remote_autosync
-    pwd="$(pwd -P)"
-    symbol_path="$pwd/.worktree-symbol"
-    worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-    worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "$pwd")"
-    base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
-    base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-    remote_name="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME" || echo "")"
-    remote_autosync="$(parafork_remote_autosync_from_symbol_or_config "$base_root" "$symbol_path")"
-
-    if [[ -n "$base_root" ]]; then
-      parafork_check_config_drift "$base_root" "$allow_drift" "$yes" "$iam" "$symbol_path"
-    fi
-
-    local remote_available="false"
-    if [[ -n "$base_root" ]] && parafork_is_remote_available "$base_root" "$remote_name"; then
-      remote_available="true"
-    fi
-
-    local remote_sync_enabled="false"
-    if [[ "$remote_available" == "true" && "$remote_autosync" == "true" ]]; then
-      remote_sync_enabled="true"
-    fi
-
-    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" == "true" ]]; then
-      parafork_require_yes_i_am_maintainer_for_flag "--no-fetch" "$yes" "$iam"
-    fi
-
-    local upstream="$base_branch"
-    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
-      git -C "$base_root" fetch "$remote_name"
-      upstream="$remote_name/$base_branch"
-    fi
-
-    parafork_print_kv STRATEGY "$strategy"
-    parafork_print_kv UPSTREAM "$upstream"
-
-    local approve_rebase="false"
-    if [[ "${PARAFORK_APPROVE_PULL_REBASE:-0}" == "1" ]] || [[ "$(git -C "$base_root" config --bool --default false parafork.approval.pull.rebase 2>/dev/null)" == "true" ]]; then
-      approve_rebase="true"
-    fi
-
-    local approve_merge="false"
-    if [[ "${PARAFORK_APPROVE_PULL_MERGE:-0}" == "1" ]] || [[ "$(git -C "$base_root" config --bool --default false parafork.approval.pull.merge 2>/dev/null)" == "true" ]]; then
-      approve_merge="true"
-    fi
-
-    if [[ "$strategy" == "rebase" ]]; then
-      if [[ "$approve_rebase" != "true" ]]; then
-        echo "REFUSED: pull rebase not approved"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "ask maintainer then rerun with PARAFORK_APPROVE_PULL_REBASE=1 and --yes --i-am-maintainer"
-        return 1
-      fi
-      parafork_require_yes_i_am_maintainer_for_flag "--strategy rebase" "$yes" "$iam"
-      if ! git rebase "$upstream"; then
-        echo "REFUSED: rebase stopped (likely conflicts)"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git rebase --continue (or git rebase --abort)"
-        return 1
-      fi
-    elif [[ "$strategy" == "merge" ]]; then
-      if [[ "$approve_merge" != "true" ]]; then
-        echo "REFUSED: pull merge not approved"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "ask maintainer then rerun with PARAFORK_APPROVE_PULL_MERGE=1 and --yes --i-am-maintainer"
-        return 1
-      fi
-      parafork_require_yes_i_am_maintainer_for_flag "--strategy merge" "$yes" "$iam"
-      if ! git merge --no-ff "$upstream"; then
-        echo "REFUSED: merge stopped (likely conflicts)"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git merge --continue (or git merge --abort)"
-        return 1
-      fi
-    else
-      if ! git merge --ff-only "$upstream"; then
-        echo "REFUSED: cannot fast-forward"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "ask maintainer to approve rebase/merge strategy"
-        return 1
-      fi
-    fi
-
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD do exec"
-  }
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork do pull" "$ENTRY_CMD do pull --strategy $strategy" -- pull_body
-}
-
 cmd_do() {
   local action="${1:-}"
   if [[ -z "$action" || "$action" == "-h" || "$action" == "--help" ]]; then
@@ -1070,7 +827,6 @@ Usage: $ENTRY_CMD do <action> [args...]
 Actions:
   exec [--loop] [--interval <sec>] [--strict]
   commit --message "<msg>" [--no-check]
-  pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 EOF
     exit 0
   fi
@@ -1079,101 +835,13 @@ EOF
   case "$action" in
     exec) cmd_do_exec "$@" ;;
     commit) cmd_do_commit "$@" ;;
-    pull) cmd_do_pull "$@" ;;
     *) parafork_die "unknown action: $action" ;;
   esac
-}
-
-cmd_check_diff() {
-  if [[ $# -gt 0 ]]; then
-    parafork_die "unknown arg: $1"
-  fi
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  diff_body() {
-    local pwd symbol_path worktree_id base_branch
-    pwd="$(pwd -P)"
-    symbol_path="$pwd/.worktree-symbol"
-    worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-    base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-
-    echo "DIFF_RANGE=$base_branch...HEAD"
-    git diff --stat "$base_branch...HEAD" || true
-    echo
-    git diff "$base_branch...HEAD" || true
-
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD do exec"
-  }
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check diff" "$ENTRY_CMD check diff" -- diff_body
-}
-
-cmd_check_log() {
-  local limit="20"
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --limit)
-        limit="${2:-}"
-        [[ -n "$limit" ]] || parafork_die "missing value for --limit"
-        shift 2
-        ;;
-      -h|--help)
-        cat <<EOF
-Usage: $ENTRY_CMD check log [--limit <n>]
-EOF
-        exit 0
-        ;;
-      *)
-        parafork_die "unknown arg: $1"
-        ;;
-    esac
-  done
-
-  if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
-    parafork_die "invalid --limit: $limit"
-  fi
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  log_body() {
-    local pwd symbol_path worktree_id
-    pwd="$(pwd -P)"
-    symbol_path="$pwd/.worktree-symbol"
-    worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-
-    git log --oneline --decorate -n "$limit"
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD do exec"
-  }
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check log" "$ENTRY_CMD check log --limit $limit" -- log_body
-}
-
-cmd_check_review() {
-  if [[ $# -gt 0 ]]; then
-    parafork_die "unknown arg: $1"
-  fi
-
-  if ! parafork_guard_worktree; then
-    exit 1
-  fi
-  cd "$PARAFORK_WORKTREE_ROOT"
-
-  parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check review" "$ENTRY_CMD check review" -- do_review "true"
 }
 
 cmd_merge() {
   local yes="false"
   local iam="false"
-  local no_fetch="false"
-  local allow_drift="false"
   local message=""
 
   while [[ $# -gt 0 ]]; do
@@ -1184,14 +852,6 @@ cmd_merge() {
         ;;
       --i-am-maintainer)
         iam="true"
-        shift
-        ;;
-      --no-fetch)
-        no_fetch="true"
-        shift
-        ;;
-      --allow-config-drift)
-        allow_drift="true"
         shift
         ;;
       --message)
@@ -1208,8 +868,6 @@ Preview-only unless all gates are satisfied:
 
 Options:
   --message "<msg>"          Override merge commit message (squash mode)
-  --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
-  --allow-config-drift        Override session config drift checks (requires --yes --i-am-maintainer)
 EOF
         exit 0
         ;;
@@ -1225,37 +883,16 @@ EOF
   cd "$PARAFORK_WORKTREE_ROOT"
 
   merge_body() {
-    local pwd symbol_path worktree_id worktree_root base_root base_branch remote_name remote_autosync worktree_branch
+    local pwd symbol_path worktree_id base_root base_branch worktree_branch
     pwd="$(pwd -P)"
     symbol_path="$pwd/.worktree-symbol"
     worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-    worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "$pwd")"
     base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
     base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
-    remote_name="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME" || echo "")"
-    remote_autosync="$(parafork_remote_autosync_from_symbol_or_config "$base_root" "$symbol_path")"
     worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
-
-    if [[ -n "$base_root" ]]; then
-      parafork_check_config_drift "$base_root" "$allow_drift" "$yes" "$iam" "$symbol_path"
-    fi
 
     if [[ -z "$message" ]]; then
       message="parafork: merge $worktree_id"
-    fi
-
-    local remote_available="false"
-    if [[ -n "$base_root" ]] && parafork_is_remote_available "$base_root" "$remote_name"; then
-      remote_available="true"
-    fi
-
-    local remote_sync_enabled="false"
-    if [[ "$remote_available" == "true" && "$remote_autosync" == "true" ]]; then
-      remote_sync_enabled="true"
-    fi
-
-    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" == "true" ]]; then
-      parafork_require_yes_i_am_maintainer_for_flag "--no-fetch" "$yes" "$iam"
     fi
 
     local approved="false"
@@ -1285,7 +922,7 @@ EOF
 
     local base_tracked_dirty base_untracked_count
     base_tracked_dirty="$(git -C "$base_root" status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
-    base_untracked_count="$(git -C "$base_root" status --porcelain | awk '/^\\?\\?/ {c++} END {print c+0}')"
+    base_untracked_count="$(git -C "$base_root" status --porcelain | awk '/^\?\?/ {c++} END {print c+0}')"
 
     if [[ "$base_tracked_dirty" != "0" ]]; then
       echo "REFUSED: base repo not clean (tracked)"
@@ -1303,23 +940,6 @@ EOF
       parafork_print_kv BASE_CURRENT_BRANCH "$base_current_branch"
       parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "cd \"$base_root\" && git checkout \"$base_branch\""
       return 1
-    fi
-
-    if [[ "$remote_sync_enabled" == "true" && "$no_fetch" != "true" ]]; then
-      git -C "$base_root" fetch "$remote_name"
-      git -C "$base_root" rev-parse --verify "$remote_name/$base_branch^{commit}" >/dev/null 2>&1 || \
-        parafork_die "missing remote base ref: $remote_name/$base_branch"
-
-      if ! git -C "$base_root" merge --ff-only "$remote_name/$base_branch"; then
-        echo "REFUSED: cannot fast-forward base to remote base"
-        parafork_print_kv REMOTE_BASE "$remote_name/$base_branch"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve base/remote divergence manually, then retry"
-        return 1
-      fi
-    elif [[ "$remote_available" == "true" && "$remote_sync_enabled" != "true" ]]; then
-      echo "WARN: remote.autosync=false; skip remote-base alignment and use local base"
-    elif [[ "$remote_available" == "true" && "$no_fetch" == "true" ]]; then
-      echo "WARN: --no-fetch used; merge may target an out-of-date base"
     fi
 
     echo "PREVIEW_COMMITS=$base_branch..$worktree_branch"
@@ -1357,7 +977,7 @@ EOF
     else
       if ! git -C "$base_root" merge --no-ff "$worktree_branch" -m "$message"; then
         echo "REFUSED: merge stopped (likely conflicts)"
-        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git -C \"$base_root\" merge --continue (or git -C \"$base_root\" merge --abort)"
+        parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "resolve then git -C "$base_root" merge --continue (or git -C "$base_root" merge --abort)"
         return 1
       fi
     fi

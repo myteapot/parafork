@@ -23,7 +23,7 @@
   - 可从 base repo / worktree 子目录 / worktree 根目录启动
   - 默认总是 `init --new`（不自动复用），随后执行 `do exec`（摘要 + 校验 + NEXT）
 
-> `do exec` 不会自动 `do commit/do pull/merge`；只输出一次 `NEXT`（可复制执行）。
+> `do exec` 不会自动 `do commit/merge`；只输出一次 `NEXT`（可复制执行）。
 
 ## 2) 手动子命令（高级）
 
@@ -35,14 +35,11 @@
 - `... do exec`
 - `... do exec --loop --interval 2`
 - `... check status`
-- `... check diff`
-- `... check log --limit 20`
-- `... check review`
+- `... check merge`
 
 每个 task 微循环（不自动 commit）：
 - 更新计划 / `paradoc/Exec.md`
 - `... do commit --message "..."`
-- 需要时：`... do pull`
 
 ## 3) Merge（仅 maintainer）
 

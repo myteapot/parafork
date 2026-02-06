@@ -175,14 +175,6 @@ parafork_git_path_abs() {
   echo "$repo_root/$p"
 }
 
-parafork_is_remote_available() {
-  local base_root="$1"
-  local remote_name="$2"
-
-  [[ -n "$remote_name" ]] || return 1
-  git -C "$base_root" remote get-url "$remote_name" >/dev/null 2>&1
-}
-
 parafork_agent_id() {
   if [[ -n "${PARAFORK_AGENT_ID:-}" ]]; then
     printf '%s' "$PARAFORK_AGENT_ID"
@@ -450,77 +442,5 @@ parafork_require_yes_i_am_maintainer_for_flag() {
 
   if [[ "$yes" != "true" || "$iam" != "true" ]]; then
     parafork_die "$flag_name requires --yes --i-am-maintainer"
-  fi
-}
-
-parafork_remote_autosync_from_symbol_or_config() {
-  local base_root="$1"
-  local symbol_path="$2"
-
-  local symbol_remote_autosync
-  symbol_remote_autosync="$(parafork_symbol_get "$symbol_path" "REMOTE_AUTOSYNC" || true)"
-  if [[ "$symbol_remote_autosync" == "true" || "$symbol_remote_autosync" == "false" ]]; then
-    echo "$symbol_remote_autosync"
-    return 0
-  fi
-
-  local config_path
-  config_path="$(parafork_config_path_from_base "$base_root")"
-  if [[ ! -f "$config_path" ]]; then
-    parafork_die "missing config: $config_path"
-  fi
-
-  parafork_toml_get_bool "$config_path" "remote" "autosync" "false"
-}
-
-parafork_check_config_drift() {
-  local base_root="$1"
-  local allow_drift="$2"
-  local yes="$3"
-  local iam="$4"
-
-  local symbol_path="$5"
-
-  local config_path
-  config_path="$(parafork_config_path_from_base "$base_root")"
-
-  if [[ ! -f "$config_path" ]]; then
-    parafork_die "missing config: $config_path"
-  fi
-
-  local base_branch_source remote_name_source remote_autosync_source
-  base_branch_source="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH_SOURCE" || true)"
-  remote_name_source="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME_SOURCE" || true)"
-  remote_autosync_source="$(parafork_symbol_get "$symbol_path" "REMOTE_AUTOSYNC_SOURCE" || true)"
-
-  local symbol_base_branch symbol_remote_name symbol_remote_autosync
-  symbol_base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || true)"
-  symbol_remote_name="$(parafork_symbol_get "$symbol_path" "REMOTE_NAME" || true)"
-  symbol_remote_autosync="$(parafork_symbol_get "$symbol_path" "REMOTE_AUTOSYNC" || true)"
-
-  local config_base_branch config_remote_name config_remote_autosync
-  config_base_branch="$(parafork_toml_get_str "$config_path" "base" "branch" "main")"
-  config_remote_name="$(parafork_toml_get_str "$config_path" "remote" "name" "")"
-  config_remote_autosync="$(parafork_toml_get_bool "$config_path" "remote" "autosync" "false")"
-
-  if [[ "$base_branch_source" == "config" && "$config_base_branch" != "$symbol_base_branch" ]]; then
-    if [[ "$allow_drift" != "true" ]]; then
-      parafork_die "config drift detected (base.branch): symbol='$symbol_base_branch' config='$config_base_branch' (rerun with --allow-config-drift --yes --i-am-maintainer to override)"
-    fi
-    parafork_require_yes_i_am_maintainer_for_flag "--allow-config-drift" "$yes" "$iam"
-  fi
-
-  if [[ "$remote_name_source" == "config" && "$config_remote_name" != "$symbol_remote_name" ]]; then
-    if [[ "$allow_drift" != "true" ]]; then
-      parafork_die "config drift detected (remote.name): symbol='$symbol_remote_name' config='$config_remote_name' (rerun with --allow-config-drift --yes --i-am-maintainer to override)"
-    fi
-    parafork_require_yes_i_am_maintainer_for_flag "--allow-config-drift" "$yes" "$iam"
-  fi
-
-  if [[ "$remote_autosync_source" == "config" && -n "$symbol_remote_autosync" && "$config_remote_autosync" != "$symbol_remote_autosync" ]]; then
-    if [[ "$allow_drift" != "true" ]]; then
-      parafork_die "config drift detected (remote.autosync): symbol='$symbol_remote_autosync' config='$config_remote_autosync' (rerun with --allow-config-drift --yes --i-am-maintainer to override)"
-    fi
-    parafork_require_yes_i_am_maintainer_for_flag "--allow-config-drift" "$yes" "$iam"
   fi
 }
