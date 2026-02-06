@@ -6,13 +6,13 @@ function ParaforkNowUtc {
 
 function ParaforkDie {
   param([string]$Message)
-  Write-Output "ERROR: $Message"
+  Write-Host "ERROR: $Message"
   throw $Message
 }
 
 function ParaforkWarn {
   param([string]$Message)
-  Write-Output "WARN: $Message"
+  Write-Host "WARN: $Message"
 }
 
 function ParaforkScriptDir {
@@ -401,7 +401,7 @@ function ParaforkGuardWorktreeRoot {
   $pwd = (Get-Location).Path
 
   $entryPath = Join-Path (ParaforkScriptDir) 'parafork.ps1'
-  $debugNext = ParaforkPsFileCmd $entryPath @('debug')
+  $debugNext = ParaforkPsFileCmd $entryPath @('help', '--debug')
   $initNext = "cd <BASE_ROOT>; " + (ParaforkPsFileCmd $entryPath @('init', '--new'))
 
   $symbolPath = ParaforkSymbolFindUpwards $pwd
@@ -435,7 +435,7 @@ function ParaforkGuardWorktreeRoot {
   $worktreeUsed = ParaforkSymbolGet $symbolPath 'WORKTREE_USED'
   if ($worktreeUsed -ne '1') {
     Write-Output 'REFUSED: worktree not entered (WORKTREE_USED!=1)'
-    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' (ParaforkPsFileCmd $entryPath @('init', '--reuse'))
+    ParaforkPrintOutputBlock $worktreeId $pwd 'FAIL' ('PARAFORK_APPROVE_REUSE=1 ' + (ParaforkPsFileCmd $entryPath @('init', '--reuse', '--yes', '--i-am-maintainer')))
     return $null
   }
 

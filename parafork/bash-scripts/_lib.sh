@@ -336,7 +336,7 @@ parafork_guard_worktree() {
   entry_cmd="$(parafork_entry_cmd)"
 
   local debug_next init_next
-  debug_next="$entry_cmd debug"
+  debug_next="$entry_cmd help --debug"
   init_next="cd <BASE_ROOT> && $entry_cmd init --new"
 
   local symbol_path=""
@@ -375,7 +375,7 @@ parafork_guard_worktree() {
   worktree_used="$(parafork_symbol_get "$symbol_path" "WORKTREE_USED" || true)"
   if [[ "$worktree_used" != "1" ]]; then
     echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$entry_cmd init --reuse"
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "PARAFORK_APPROVE_REUSE=1 $entry_cmd init --reuse --yes --i-am-maintainer"
     return 1
   fi
 

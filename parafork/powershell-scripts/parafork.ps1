@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$global:LASTEXITCODE = 0
 
 . "$PSScriptRoot/_lib.ps1"
 
@@ -21,31 +22,28 @@ Usage:
   $ENTRY_CMD [cmd] [args...]
 
 Commands:
-  help
-  debug
+  help [debug|--debug]
   init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
-  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]
-  check [topic] [args...]
   do <action> [args...]
+  check [topic] [args...]
   merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
 check topics:
-  exec [--strict]    (default)
   merge [--strict]
-  plan [--strict]
-  status
+  status    (default)
   diff
   log [--limit <n>]
   review
 
 do actions:
+  exec [--loop] [--interval <sec>] [--strict]
   commit --message "<msg>" [--no-check]
   pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 
 Notes:
-  - Default (no cmd): watch
-  - watch defaults to creating a new worktree; reuse needs approval + --yes --i-am-maintainer.
-  - watch does not auto-commit/merge; it only prints NEXT when safe.
+  - Default (no cmd): init --new + do exec
+  - init handles worktree lifecycle (new/reuse)
+  - do exec performs status+check and prints NEXT
 "@
 }
 
@@ -117,7 +115,7 @@ function ParaforkGuardWorktree {
   if (-not $symbolPath) {
     $baseRoot = ParaforkGitToplevel
     if ($baseRoot) {
-      ParaforkPrintOutputBlock 'UNKNOWN' $pwdNow 'FAIL' (ParaforkEntryCmd @('debug'))
+      ParaforkPrintOutputBlock 'UNKNOWN' $pwdNow 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
       return $null
     }
     ParaforkPrintOutputBlock 'UNKNOWN' $pwdNow 'FAIL' ("cd <BASE_ROOT>; " + (ParaforkEntryCmd @('init', '--new')))
@@ -126,7 +124,7 @@ function ParaforkGuardWorktree {
 
   $paraforkWorktree = ParaforkSymbolGet $symbolPath 'PARAFORK_WORKTREE'
   if ($paraforkWorktree -ne '1') {
-    ParaforkPrintOutputBlock 'UNKNOWN' $pwdNow 'FAIL' (ParaforkEntryCmd @('debug'))
+    ParaforkPrintOutputBlock 'UNKNOWN' $pwdNow 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
     return $null
   }
 
@@ -137,14 +135,14 @@ function ParaforkGuardWorktree {
 
   $worktreeRoot = ParaforkSymbolGet $symbolPath 'WORKTREE_ROOT'
   if ([string]::IsNullOrEmpty($worktreeRoot)) {
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' (ParaforkEntryCmd @('debug'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
     return $null
   }
 
   $worktreeUsed = ParaforkSymbolGet $symbolPath 'WORKTREE_USED'
   if ($worktreeUsed -ne '1') {
     Write-Output 'REFUSED: worktree not entered (WORKTREE_USED!=1)'
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' (ParaforkEntryCmd @('init', '--reuse'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ('PARAFORK_APPROVE_REUSE=1 ' + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer')))
     return $null
   }
 
@@ -296,7 +294,7 @@ function InitNewWorktree {
 
   $worktreeBranch = "parafork/$worktreeId"
 
-  & git -C $baseRoot worktree add $worktreeRoot -b $worktreeBranch $worktreeStartPoint
+  $null = & git -C $baseRoot worktree add $worktreeRoot -b $worktreeBranch $worktreeStartPoint
   if ($LASTEXITCODE -ne 0) {
     ParaforkDie "git worktree add failed (root: $worktreeRoot branch: $worktreeBranch start: $worktreeStartPoint)"
   }
@@ -342,6 +340,7 @@ function InitNewWorktree {
 
     $paradocDir = Join-Path $worktreeRoot 'paradoc'
     $null = New-Item -ItemType Directory -Force -Path $paradocDir
+    ParaforkWriteTextUtf8NoBom (Join-Path $paradocDir 'Log.txt') ''
 
     foreach ($doc in @('Exec', 'Merge')) {
       $src = Join-Path $paraforkRoot ("assets/{0}.md" -f $doc)
@@ -373,7 +372,7 @@ function InitNewWorktree {
     ParaforkPrintKv 'WORKTREE_START_POINT' $worktreeStartPoint
   }
 
-  ParaforkInvokeLogged $worktreeRoot 'parafork init' @('--new') $body
+  $null = ParaforkInvokeLogged $worktreeRoot 'parafork init' @('--new') $body
 
   return @{
     WorktreeId = $worktreeId
@@ -418,7 +417,7 @@ function DoStatus {
   ParaforkPrintKv 'WORKTREE_BRANCH' $worktreeBranch
 
   if ($PrintBlock) {
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('check', 'exec'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
   }
 }
 
@@ -426,7 +425,7 @@ function DoCheck {
   param(
     [Parameter(Mandatory = $true)][string]$Phase,
     [bool]$Strict,
-    [Parameter(Mandatory = $true)][string]$Mode # cli|watch
+    [Parameter(Mandatory = $true)][string]$Mode # cli|do
   )
 
   $pwdNow = (Get-Location).Path
@@ -581,7 +580,20 @@ function DoReview {
 }
 
 function CmdHelp {
-  ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'PASS' (ParaforkEntryCmd @('watch'))
+  param([string[]]$CmdArgs = @())
+
+  if ($CmdArgs.Count -gt 0) {
+    $topic = $CmdArgs[0]
+    if ($topic -eq 'debug' -or $topic -eq '--debug') {
+      if ($CmdArgs.Count -gt 1) {
+        ParaforkDie ("unknown arg for help debug: {0}" -f $CmdArgs[1])
+      }
+      return (CmdDebug)
+    }
+    ParaforkDie ("unknown help topic: {0}" -f $topic)
+  }
+
+  ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'PASS' (ParaforkEntryCmd @())
   Write-Output (ParaforkUsage)
   return 0
 }
@@ -590,7 +602,7 @@ function CmdDebug {
   $pwdNow = (Get-Location).Path
   $symbolPath = ParaforkSymbolFindUpwards $pwdNow
 
-  $debugCmd = ParaforkEntryCmd @('debug')
+  $debugCmd = ParaforkEntryCmd @('help', '--debug')
 
   if ($symbolPath) {
     $paraforkWorktree = ParaforkSymbolGet $symbolPath 'PARAFORK_WORKTREE'
@@ -607,11 +619,11 @@ function CmdDebug {
 
     $body = {
       ParaforkPrintKv 'SYMBOL_PATH' $symbolPath
-      ParaforkPrintOutputBlock $worktreeId $invocationPwd 'PASS' (ParaforkEntryCmd @('watch'))
+      ParaforkPrintOutputBlock $worktreeId $invocationPwd 'PASS' (ParaforkEntryCmd @('do', 'exec'))
     }
 
     if (-not [string]::IsNullOrEmpty($worktreeRoot)) {
-      ParaforkInvokeLogged $worktreeRoot 'parafork debug' @() $body
+      ParaforkInvokeLogged $worktreeRoot 'parafork help debug' @() $body
     } else {
       & $body
     }
@@ -657,7 +669,7 @@ function CmdDebug {
     $chosenId = 'UNKNOWN'
   }
 
-  $next = "cd " + (ParaforkQuotePs $chosen) + "; " + (ParaforkEntryCmd @('init', '--reuse'))
+  $next = "cd " + (ParaforkQuotePs $chosen) + "; PARAFORK_APPROVE_REUSE=1 " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
 
   $body = {
     Write-Output ""
@@ -665,12 +677,14 @@ function CmdDebug {
     ParaforkPrintOutputBlock $chosenId $invocationPwd 'PASS' $next
   }
 
-  ParaforkInvokeLogged $chosen 'parafork debug' @() $body
+  ParaforkInvokeLogged $chosen 'parafork help debug' @() $body
   return 0
 }
 
 function CmdInit {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $mode = 'auto' # auto|new|reuse
   $baseBranchOverride = $null
@@ -783,7 +797,7 @@ Options:
   if ($symbolPath) {
     $paraforkWorktree = ParaforkSymbolGet $symbolPath 'PARAFORK_WORKTREE'
     if ($paraforkWorktree -ne '1') {
-      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('debug'))
+      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
       ParaforkDie "found .worktree-symbol but not a parafork worktree: $symbolPath"
     }
     $inWorktree = $true
@@ -805,14 +819,14 @@ Options:
     ParaforkPrintKv 'BASE_ROOT' $symbolBaseRoot
     Write-Output ""
     Write-Output "Choose one:"
-    Write-Output ("- Reuse current worktree: {0}" -f (ParaforkEntryCmd @('init', '--reuse')))
+    Write-Output ("- Reuse current worktree: {0}" -f ('PARAFORK_APPROVE_REUSE=1 ' + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))))
     Write-Output ("- Create new worktree:    {0}" -f (ParaforkEntryCmd @('init', '--new')))
     ParaforkPrintOutputBlock $wtId $invocationPwd 'FAIL' (ParaforkEntryCmd @('init', '--new'))
     return 1
   }
 
   if (-not $inWorktree -and $mode -eq 'reuse') {
-    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('debug'))
+    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
     ParaforkDie '--reuse requires being inside an existing parafork worktree'
   }
 
@@ -850,7 +864,7 @@ Options:
     }
 
     EnsureWorktreeUsed $worktreeRoot $symbolPath
-    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; " + (ParaforkEntryCmd @('check', 'exec'))
+    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; " + (ParaforkEntryCmd @('do', 'exec'))
     ParaforkPrintOutputBlock $worktreeId $invocationPwd 'PASS' $next
     return 0
   }
@@ -859,9 +873,21 @@ Options:
     $null = Set-Location -LiteralPath $symbolBaseRoot
   }
 
-  $created = InitNewWorktree -BaseBranchOverride $baseBranchOverride -RemoteOverride $remoteOverride -NoRemote:$noRemote -NoFetch:$noFetch -Yes:$yes -Iam:$iam
+  $createdRaw = @(InitNewWorktree -BaseBranchOverride $baseBranchOverride -RemoteOverride $remoteOverride -NoRemote:$noRemote -NoFetch:$noFetch -Yes:$yes -Iam:$iam)
+  $created = $null
+  foreach ($item in $createdRaw) {
+    if ($item -is [hashtable]) {
+      $created = $item
+    } else {
+      Write-Output $item
+    }
+  }
 
-  $next = "cd " + (ParaforkQuotePs $created.WorktreeRoot) + "; " + (ParaforkEntryCmd @('check', 'exec'))
+  if (-not $created) {
+    ParaforkDie 'init failed: missing worktree metadata'
+  }
+
+  $next = "cd " + (ParaforkQuotePs $created.WorktreeRoot) + "; " + (ParaforkEntryCmd @('do', 'exec'))
   ParaforkPrintOutputBlock $created.WorktreeId $invocationPwd 'PASS' $next
   return 0
 }
@@ -875,42 +901,6 @@ function CmdCheckStatus {
   $null = Set-Location -LiteralPath $guard.WorktreeRoot
   $body = { DoStatus $true }
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check status' @() $body
-  return 0
-}
-
-function CmdCheckExec {
-  param([bool]$Strict)
-
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
-  }
-
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
-  $worktreeId = $guard.WorktreeId
-
-  $argv = @()
-  if ($Strict) {
-    $argv += '--strict'
-  }
-
-  $body = {
-    $pwdNow = (Get-Location).Path
-    DoStatus $false
-    if (-not (DoCheck -Phase 'exec' -Strict:$Strict -Mode 'cli')) {
-      ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('check', 'exec')))
-      throw 'check failed'
-    }
-
-    $changes = (& git status --porcelain 2>$null | Measure-Object).Count
-    if ($changes -ne 0) {
-      ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'commit', '--message', '<msg>'))
-    } else {
-      ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' 'edit files (watch will re-check on change)'
-    }
-  }
-
-  ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check exec' $argv $body
   return 0
 }
 
@@ -946,38 +936,10 @@ function CmdCheckMerge {
   return 0
 }
 
-function CmdCheckPlan {
-  param([bool]$Strict)
-
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
-  }
-
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
-  $worktreeId = $guard.WorktreeId
-
-  $argv = @()
-  if ($Strict) {
-    $argv += '--strict'
-  }
-
-  $body = {
-    $pwdNow = (Get-Location).Path
-    if (-not (DoCheck -Phase 'plan' -Strict:$Strict -Mode 'cli')) {
-      ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('check', 'plan')))
-      throw 'check failed'
-    }
-
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('check', 'exec'))
-  }
-
-  ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check plan' $argv $body
-  return 0
-}
-
 function CmdCheck {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $strict = $false
   $topic = $null
@@ -997,10 +959,8 @@ function CmdCheck {
 Usage: $ENTRY_CMD check [topic] [args...]
 
 Topics:
-  exec [--strict]    (default)
   merge [--strict]
-  plan [--strict]
-  status
+  status    (default)
   diff
   log [--limit <n>]
   review
@@ -1027,48 +987,41 @@ Usage: $ENTRY_CMD check [topic] [args...]
   }
 
   if (-not $topicProvided -or [string]::IsNullOrEmpty($topic)) {
-    $topic = 'exec'
+    $topic = 'status'
   }
 
   switch ($topic) {
-    'exec' {
-      if ($rest.Count -gt 0) {
-        ParaforkDie ("unknown arg: {0}" -f $rest[0])
-      }
-      return (CmdCheckExec -Strict:$strict)
-    }
     'merge' {
       if ($rest.Count -gt 0) {
         ParaforkDie ("unknown arg: {0}" -f $rest[0])
       }
-      return (CmdCheckMerge -Strict:$strict)
-    }
-    'plan' {
-      if ($rest.Count -gt 0) {
-        ParaforkDie ("unknown arg: {0}" -f $rest[0])
-      }
-      return (CmdCheckPlan -Strict:$strict)
+      $code = CmdCheckMerge -Strict:$strict
+      return $code
     }
     'status' {
       if ($rest.Count -gt 0) {
         ParaforkDie ("unknown arg: {0}" -f $rest[0])
       }
-      return (CmdCheckStatus)
+      $code = CmdCheckStatus
+      return $code
     }
     'diff' {
       if ($rest.Count -gt 0) {
         ParaforkDie ("unknown arg: {0}" -f $rest[0])
       }
-      return (CmdCheckDiff)
+      $code = CmdCheckDiff
+      return $code
     }
     'log' {
-      return (CmdCheckLog -CmdArgs $rest)
+      $code = CmdCheckLog -CmdArgs $rest
+      return $code
     }
     'review' {
       if ($rest.Count -gt 0) {
         ParaforkDie ("unknown arg: {0}" -f $rest[0])
       }
-      return (CmdCheckReview)
+      $code = CmdCheckReview
+      return $code
     }
     default {
       ParaforkDie ("unknown topic: {0}" -f $topic)
@@ -1076,8 +1029,104 @@ Usage: $ENTRY_CMD check [topic] [args...]
   }
 }
 
+function CmdDoExec {
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
+
+  $strict = $false
+  $loop = $false
+  $interval = 2
+
+  for ($i = 0; $i -lt $CmdArgs.Count; ) {
+    $a = $CmdArgs[$i]
+    switch ($a) {
+      '--strict' { $strict = $true; $i++; continue }
+      '--loop' { $loop = $true; $i++; continue }
+      '--interval' {
+        if ($i + 1 -ge $CmdArgs.Count) { ParaforkDie 'missing value for --interval' }
+        $interval = [int]$CmdArgs[$i + 1]
+        $i += 2
+        continue
+      }
+      '--help' {
+        Write-Output "Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]"
+        return 0
+      }
+      '-h' {
+        Write-Output "Usage: $ENTRY_CMD do exec [--loop] [--interval <sec>] [--strict]"
+        return 0
+      }
+      default { ParaforkDie ("unknown arg: {0}" -f $a) }
+    }
+  }
+
+  if ($interval -lt 1) {
+    ParaforkDie ("invalid --interval: {0}" -f $interval)
+  }
+
+  $guard = ParaforkGuardWorktree
+  if (-not $guard) {
+    return 1
+  }
+  $null = Set-Location -LiteralPath $guard.WorktreeRoot
+
+  $worktreeId = $guard.WorktreeId
+  $worktreeRoot = $guard.WorktreeRoot
+
+  $execOnce = {
+    DoStatus $false
+    if (-not (DoCheck -Phase 'exec' -Strict:$strict -Mode 'do')) {
+      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('do', 'exec')))
+      throw 'exec check failed'
+    }
+
+    $changes = (& git status --porcelain 2>$null | Measure-Object).Count
+    if ($changes -ne 0) {
+      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' (ParaforkEntryCmd @('do', 'commit', '--message', '<msg>'))
+    } else {
+      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' ("edit files (rerun: " + (ParaforkEntryCmd @('do', 'exec')) + ")")
+    }
+  }
+
+  try {
+    & $execOnce
+  } catch {
+    return 1
+  }
+
+  if (-not $loop) {
+    return 0
+  }
+
+  $lastHead = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
+  $lastPorcelain = ((& git status --porcelain 2>$null) -join "`n")
+
+  while ($true) {
+    Start-Sleep -Seconds $interval
+
+    $head = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
+    $porcelain = ((& git status --porcelain 2>$null) -join "`n")
+
+    if ($head -eq $lastHead -and $porcelain -eq $lastPorcelain) {
+      continue
+    }
+
+    $lastHead = $head
+    $lastPorcelain = $porcelain
+
+    try {
+      & $execOnce
+    } catch {
+      return 1
+    }
+  }
+}
+
 function CmdDoCommit {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $message = $null
   $noCheck = $false
@@ -1129,7 +1178,7 @@ function CmdDoCommit {
 
   $body = {
     if (-not $noCheck) {
-      if (-not (DoCheck -Phase 'exec' -Strict:$false -Mode 'watch')) {
+      if (-not (DoCheck -Phase 'exec' -Strict:$false -Mode 'cli')) {
         Write-Output 'REFUSED: check failed'
         ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues then retry: " + $commitCmd)
         throw 'check failed'
@@ -1169,7 +1218,7 @@ function CmdDoCommit {
 
     $head = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
     ParaforkPrintKv 'COMMIT' $head
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('check', 'exec'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
   }
 
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork do commit' @('--message', $message) $body
@@ -1177,7 +1226,9 @@ function CmdDoCommit {
 }
 
 function CmdDoPull {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $strategy = 'ff-only'
   $noFetch = $false
@@ -1357,7 +1408,7 @@ Options:
       }
     }
 
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('check', 'exec'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
   }
 
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork do pull' @('--strategy', $strategy) $body
@@ -1365,13 +1416,16 @@ Options:
 }
 
 function CmdDo {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   if (-not $CmdArgs -or $CmdArgs.Count -eq 0 -or $CmdArgs[0] -eq '--help' -or $CmdArgs[0] -eq '-h') {
     Write-Output ("
 Usage: $ENTRY_CMD do <action> [args...]
 
 Actions:
+  exec [--loop] [--interval <sec>] [--strict]
   commit --message ""<msg>"" [--no-check]
   pull [--strategy ff-only|rebase|merge] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
 ")
@@ -1382,8 +1436,9 @@ Actions:
   $rest = if ($CmdArgs.Count -gt 1) { $CmdArgs[1..($CmdArgs.Count - 1)] } else { @() }
 
   switch ($action) {
-    'commit' { return (CmdDoCommit $rest) }
-    'pull' { return (CmdDoPull $rest) }
+    'exec' { $code = CmdDoExec @rest; return $code }
+    'commit' { $code = CmdDoCommit @rest; return $code }
+    'pull' { $code = CmdDoPull @rest; return $code }
     default { ParaforkDie ("unknown action: {0}" -f $action) }
   }
 }
@@ -1406,7 +1461,7 @@ function CmdCheckDiff {
     & git diff --stat "$baseBranch...HEAD" 2>$null | ForEach-Object { $_ }
     Write-Output ""
     & git diff "$baseBranch...HEAD" 2>$null | ForEach-Object { $_ }
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('check', 'exec'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
   }
 
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check diff' @() $body
@@ -1414,7 +1469,9 @@ function CmdCheckDiff {
 }
 
 function CmdCheckLog {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $limit = 20
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
@@ -1458,7 +1515,7 @@ function CmdCheckLog {
 
   $body = {
     & git log --oneline --decorate -n $limit 2>$null | ForEach-Object { $_ }
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('check', 'exec'))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('do', 'exec'))
   }
 
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check log' @('--limit', "$limit") $body
@@ -1478,7 +1535,9 @@ function CmdCheckReview {
 }
 
 function CmdMerge {
-  param([string[]]$CmdArgs)
+  param([string[]]$CmdArgs = @())
+
+  if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
   $yes = $false
   $iam = $false
@@ -1526,7 +1585,7 @@ Preview-only unless all gates are satisfied:
 - CLI gate: --yes --i-am-maintainer
 
 Options:
-  --message \"<msg>\"         Override merge commit message (squash mode)
+  --message ""<msg>""         Override merge commit message (squash mode)
   --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
 ")
@@ -1541,7 +1600,7 @@ Preview-only unless all gates are satisfied:
 - CLI gate: --yes --i-am-maintainer
 
 Options:
-  --message \"<msg>\"         Override merge commit message (squash mode)
+  --message ""<msg>""         Override merge commit message (squash mode)
   --no-fetch                 Skip fetch + remote-base alignment (requires --yes --i-am-maintainer only when remote.autosync=true and remote is available)
   --allow-config-drift       Override session config drift checks (requires --yes --i-am-maintainer)
 ")
@@ -1612,9 +1671,11 @@ Options:
       throw 'wrong worktree branch'
     }
 
-    if (-not (DoCheck -Phase 'merge' -Strict:$false -Mode 'watch')) {
+    DoStatus $false
+    DoReview $false
+    if (-not (DoCheck -Phase 'merge' -Strict:$false -Mode 'cli')) {
       Write-Output 'REFUSED: check merge failed'
-      ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('merge', '--yes', '--i-am-maintainer')))
+      ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('check', 'merge')))
       throw 'check failed'
     }
 
@@ -1719,70 +1780,7 @@ Options:
   return 0
 }
 
-function CmdWatch {
-  param([string[]]$CmdArgs)
-
-  $once = $false
-  $interval = 2
-  $phase = 'exec'
-  $forceNew = $false
-  $reuseCurrent = $false
-  $yes = $false
-  $iam = $false
-
-  for ($i = 0; $i -lt $CmdArgs.Count; ) {
-    $a = $CmdArgs[$i]
-    switch ($a) {
-      '--once' { $once = $true; $i++; continue }
-      '--interval' {
-        if ($i + 1 -ge $CmdArgs.Count) { ParaforkDie 'missing value for --interval' }
-        $interval = [int]$CmdArgs[$i + 1]
-        $i += 2
-        continue
-      }
-      '--phase' {
-        if ($i + 1 -ge $CmdArgs.Count) { ParaforkDie 'missing value for --phase' }
-        $phase = $CmdArgs[$i + 1]
-        $i += 2
-        continue
-      }
-      '--new' { $forceNew = $true; $i++; continue }
-      '--reuse-current' { $reuseCurrent = $true; $i++; continue }
-      '--yes' { $yes = $true; $i++; continue }
-      '--i-am-maintainer' { $iam = $true; $i++; continue }
-      '--help' {
-        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]"
-        return 0
-      }
-      '-h' {
-        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current] [--yes] [--i-am-maintainer]"
-        return 0
-      }
-      default { ParaforkDie ("unknown arg: {0}" -f $a) }
-    }
-  }
-
-  if ($phase -ne 'exec' -and $phase -ne 'merge') {
-    ParaforkDie ("invalid --phase: {0}" -f $phase)
-  }
-  if ($interval -lt 1) {
-    ParaforkDie ("invalid --interval: {0}" -f $interval)
-  }
-
-  if ($forceNew -and $reuseCurrent) {
-    ParaforkDie '--new and --reuse-current are mutually exclusive'
-  }
-
-  if (-not $reuseCurrent -and ($yes -or $iam)) {
-    ParaforkDie '--yes/--i-am-maintainer only valid with --reuse-current'
-  }
-
-  if ($phase -eq 'merge' -and -not $reuseCurrent) {
-    Write-Output 'REFUSED: watch --phase merge requires explicit --reuse-current'
-    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current'))
-    return 1
-  }
-
+function CmdDefault {
   $pwdNow = (Get-Location).Path
   $symbolPath = ParaforkSymbolFindUpwards $pwdNow
   $inWorktree = $false
@@ -1793,125 +1791,67 @@ function CmdWatch {
     }
   }
 
-  if ($reuseCurrent) {
-    $approveBase = if ($inWorktree) { ParaforkSymbolGet $symbolPath 'BASE_ROOT' } else { ParaforkGitToplevel }
-    if ([string]::IsNullOrEmpty($approveBase) -or -not (ParaforkIsReuseApproved $approveBase)) {
-      Write-Output 'REFUSED: worktree reuse requires maintainer approval'
-      $next = "set PARAFORK_APPROVE_REUSE=1 (or git -C <BASE_ROOT> config parafork.approval.reuse true) and rerun: " + (ParaforkEntryCmd @('watch', '--reuse-current', '--yes', '--i-am-maintainer'))
-      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' $next
-      return 1
-    }
-
-    ParaforkRequireYesIam '--reuse-current' $yes $iam
+  $baseRoot = if ($inWorktree) { ParaforkSymbolGet $symbolPath 'BASE_ROOT' } else { ParaforkGitToplevel }
+  if (-not $baseRoot) {
+    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help'))
+    ParaforkDie 'not in a git repo and no .worktree-symbol found'
   }
 
-  if ($reuseCurrent) {
-    if (-not $inWorktree) {
-      Write-Output 'REFUSED: --reuse-current requires being inside an existing parafork worktree'
-      $reuseNext = ParaforkEntryCmd @('watch', '--reuse-current')
-      if ($phase -eq 'merge') {
-        $reuseNext = ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current')
-      }
-      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' ("cd <WORKTREE_ROOT>; " + $reuseNext)
-      return 1
-    }
-
-    $worktreeRoot = ParaforkSymbolGet $symbolPath 'WORKTREE_ROOT'
-    if ([string]::IsNullOrEmpty($worktreeRoot)) {
-      ParaforkDie "missing WORKTREE_ROOT in $symbolPath"
-    }
-    $null = Set-Location -LiteralPath $worktreeRoot
-    EnsureWorktreeUsed $worktreeRoot (Join-Path $worktreeRoot '.worktree-symbol')
-  } else {
-    $baseRoot = $null
-    if ($inWorktree) {
-      $baseRoot = ParaforkSymbolGet $symbolPath 'BASE_ROOT'
+  $null = Set-Location -LiteralPath $baseRoot
+  $createdRaw = @(InitNewWorktree)
+  $created = $null
+  foreach ($item in $createdRaw) {
+    if ($item -is [hashtable]) {
+      $created = $item
     } else {
-      $baseRoot = ParaforkGitToplevel
+      Write-Output $item
     }
-
-    if (-not $baseRoot) {
-      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help'))
-      ParaforkDie 'not in a git repo and no .worktree-symbol found'
-    }
-
-    $null = Set-Location -LiteralPath $baseRoot
-    $created = InitNewWorktree
-    $null = Set-Location -LiteralPath $created.WorktreeRoot
   }
 
-  $guard = ParaforkGuardWorktree
-  if (-not $guard) {
-    return 1
+  if (-not $created) {
+    ParaforkDie 'default flow failed: missing worktree metadata'
   }
 
-  $null = Set-Location -LiteralPath $guard.WorktreeRoot
+  $null = Set-Location -LiteralPath $created.WorktreeRoot
 
-  $worktreeId = $guard.WorktreeId
-  $worktreeRoot = $guard.WorktreeRoot
+  return (CmdDoExec @())
+}
 
-  if ($phase -eq 'merge') {
-    DoStatus $false
-    DoReview $false
-    if (-not (DoCheck -Phase 'merge' -Strict:$false -Mode 'watch')) {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current')))
-      return 1
-    }
-    ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' ("PARAFORK_APPROVE_MERGE=1 " + (ParaforkEntryCmd @('merge', '--yes', '--i-am-maintainer')))
+function InvokeParaforkCommand {
+  param([Parameter(Mandatory = $true)][scriptblock]$Script)
+
+  $items = @(& $Script)
+  if ($items.Count -eq 0) {
     return 0
   }
 
-  DoStatus $false
-  if (-not (DoCheck -Phase 'exec' -Strict:$false -Mode 'watch')) {
-    ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('check', 'exec')))
-    return 1
-  }
-
-  if ($once) {
-    $changes = (& git status --porcelain 2>$null | Measure-Object).Count
-    if ($changes -ne 0) {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' (ParaforkEntryCmd @('do', 'commit', '--message', '<msg>'))
+  $exitCode = 0
+  $last = $items[-1]
+  if ($last -is [int]) {
+    $exitCode = [int]$last
+    if ($items.Count -gt 1) {
+      $items = $items[0..($items.Count - 2)]
     } else {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' 'edit files (watch will re-check on change)'
-    }
-    return 0
-  }
-
-  $lastHead = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
-  $lastPorcelain = ((& git status --porcelain 2>$null) -join "`n")
-
-  while ($true) {
-    Start-Sleep -Seconds $interval
-
-    $head = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1).Trim()
-    $porcelain = ((& git status --porcelain 2>$null) -join "`n")
-
-    if ($head -eq $lastHead -and $porcelain -eq $lastPorcelain) {
-      continue
-    }
-
-    $lastHead = $head
-    $lastPorcelain = $porcelain
-
-    if (-not (DoCheck -Phase 'exec' -Strict:$false -Mode 'watch')) {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues and rerun: " + (ParaforkEntryCmd @('check', 'exec')))
-      return 1
-    }
-
-    DoStatus $false
-    $changes = (& git status --porcelain 2>$null | Measure-Object).Count
-    if ($changes -ne 0) {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' (ParaforkEntryCmd @('do', 'commit', '--message', '<msg>'))
-    } else {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' 'edit files (watch will re-check on change)'
+      $items = @()
     }
   }
+
+  foreach ($item in $items) {
+    Write-Host $item
+  }
+
+  return $exitCode
 }
 
 try {
   $argv = @($args)
 
-  $cmd = if ($argv.Count -gt 0) { $argv[0] } else { 'watch' }
+  $cmd = if ($argv.Count -gt 0) { $argv[0] } else { '' }
+  if (-not $cmd) {
+    $exitCode = InvokeParaforkCommand { CmdDefault }
+    exit $exitCode
+  }
+
   if ($cmd -eq '-h' -or $cmd -eq '--help') {
     $cmd = 'help'
     $argv = @()
@@ -1923,26 +1863,43 @@ try {
     }
   }
 
-  $exitCode = switch ($cmd) {
-    'help' { CmdHelp }
-    'debug' { CmdDebug }
-    'init' { CmdInit $argv }
-    'watch' { CmdWatch $argv }
-    'check' { CmdCheck $argv }
-    'do' { CmdDo $argv }
-    'merge' { CmdMerge $argv }
+  $exitCode = 0
+  switch ($cmd) {
+    'help' {
+      $exitCode = InvokeParaforkCommand { CmdHelp $argv }
+      break
+    }
+    'init' {
+      $exitCode = InvokeParaforkCommand { CmdInit $argv }
+      break
+    }
+    'check' {
+      $exitCode = InvokeParaforkCommand { CmdCheck $argv }
+      break
+    }
+    'do' {
+      $exitCode = InvokeParaforkCommand { CmdDo $argv }
+      break
+    }
+    'merge' {
+      $exitCode = InvokeParaforkCommand { CmdMerge $argv }
+      break
+    }
     default {
-      Write-Output ("ERROR: unknown command: {0}" -f $cmd)
-      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help'))
-      Write-Output (ParaforkUsage)
-      1
+      $exitCode = InvokeParaforkCommand {
+        Write-Output ("ERROR: unknown command: {0}" -f $cmd)
+        ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help'))
+        Write-Output (ParaforkUsage)
+        return 1
+      }
+      break
     }
   }
 
   exit $exitCode
 } catch {
   if (-not $global:PARAFORK_OUTPUT_BLOCK_PRINTED) {
-    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('debug'))
+    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help', '--debug'))
   }
   exit 1
 }

@@ -1,6 +1,6 @@
 ---
 name: parafork
-description: "单入口脚本优先的 Git worktree 工作流（仅 canonical 命令：help/debug/init/watch/check/do/merge）。默认 watch 新建 worktree；复用必须人类审批双门闩；并发锁冲突必须拒绝并人工接管；写操作（含 apply_patch）必须先进入 WORKTREE_ROOT。系统命令见 references/route-*.md。"
+description: "单入口脚本优先的 Git worktree 工作流（仅 canonical 命令：help/init/do/check/merge）。默认无参执行 init --new + do exec；复用必须人类审批双门闩；并发锁冲突必须拒绝并人工接管；写操作（含 apply_patch）必须先进入 WORKTREE_ROOT。系统命令见 references/route-*.md。"
 ---
 ---------------------- Parafork SKILL.md开始符号 ----------------------
 # Parafork技能协议
@@ -9,22 +9,22 @@ description: "单入口脚本优先的 Git worktree 工作流（仅 canonical �
 - 读取本文件后，任何修改都必须遵循本协议，不得绕开流程直接改仓库。
 
 ## MUST
-- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；仅允许 `help/init/debug/watch` 在 base repo 执行。
-- 写操作必须先进入 worktree：任何 WRITE/SIDE-EFFECT 前，必须先 `init --new` 或 `watch`，并进入 `WORKTREE_ROOT`。
-- `watch` 默认新建：禁止自动复用任何 worktree。
-- 复用必须显式且双门闩：仅允许 `watch --reuse-current` 或 `init --reuse`，且必须同时满足：
+- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；仅允许 `help/init` 在 base repo 执行。
+- 写操作必须先进入 worktree：任何 WRITE/SIDE-EFFECT 前，必须先 `init --new`（或无参默认流程），并进入 `WORKTREE_ROOT`。
+- 默认入口固定：无参执行等价“`init --new` + `do exec`（单次）”。
+- 复用必须显式且双门闩：仅允许 `init --reuse`，且必须同时满足：
   - 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
   - CLI 门闩：`--yes --i-am-maintainer`
-- merge 前检查必须显式复用：`watch --phase merge` 必须带 `--reuse-current`。
 - 并发门禁必须执行：若 `WORKTREE_LOCK_OWNER` 非当前 agent，必须拒绝执行并交由人类批准接管。
-- 仅支持 canonical 命令：`help/debug/init/watch/check/do/merge`；`status/commit/pull/diff/log/review` 与 `check --phase` 均视为无效输入。
+- 仅支持 canonical 命令：`help/init/do/check/merge`；`watch`、顶层 `debug`、`check exec`、`check plan` 均视为无效输入。
+- `check` 仅作为工具集：仅允许 `check merge|status|diff|log|review`；执行流程走 `do`。
 - 脚本优先：存在脚本能力时禁止裸 `git`；若脚本无覆盖，必须先申请人类明确同意（给出命令、风险、回退）。
 - 冲突硬门闩：检测到 `merge/rebase/cherry-pick` 冲突态时，agent 仅可输出诊断与处置建议；未经人类明确批准，禁止执行 `git * --continue/--abort`。
-- 合并门闩：禁止自动 merge；仅 maintainer 在显式批准后可运行 `merge` 合并回 base。
+- 合并门闩：禁止自动 merge；仅 maintainer 在显式批准后可运行 `merge` 合并回 base。`merge` 会自动触发 merge 前检查链。
 
 ## FALLBACK
-- 目录不确定：先执行 `debug`；若仍不确定，执行 `watch --once` 走安全默认流程。
-- 收到 WRITE 请求但不在 worktree：先 `watch`（或 `init --new`）创建/进入 worktree，再开始改动。
+- 目录不确定：先执行 `help --debug`；若仍不确定，停止并请求人类确认目标 repo/worktree。
+- 收到 WRITE 请求但不在 worktree：先 `init --new`，再执行 `do exec`，之后才开始改动。
 - 当前已在 worktree 但用户未明确“复用”：必须先询问“新建还是复用当前”；未获明确复用同意则默认新建。
 - 复用审批不足：直接 `FAIL`，输出可复制 `NEXT`（补本地批准 + `--yes --i-am-maintainer`）。
 - 锁冲突：直接 `FAIL`，输出 `LOCK_OWNER/AGENT_ID` 和人工接管 `NEXT`；禁止自动接管。

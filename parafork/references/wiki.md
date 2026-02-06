@@ -41,7 +41,7 @@
   - CLI 二次门闩（`--yes --i-am-maintainer`）
 
 3) 目录强约束（Worktree-root guard）
-- 除 `help/init/debug/watch` 外，其余子命令必须在 parafork worktree 中执行（脚本会自动切到 `WORKTREE_ROOT`）。
+- 除 `help/init` 外，其余子命令必须在 parafork worktree 中执行（脚本会自动切到 `WORKTREE_ROOT`）。
 - worktree-required 子命令还要求 `.worktree-symbol: WORKTREE_USED=1`（顺序门闩）。
 
 4) 证据链完整但默认不污染仓库历史（No git pollution by default）
@@ -86,7 +86,7 @@
 
 ## 3. 目标仓库内“会出现”的内容（脚本运行后）
 
-`init`（`parafork init --new`；或直接运行默认 `watch` 触发新建）会创建：
+`init`（`parafork init --new`；或直接无参运行触发默认流程）会创建：
 
 ```
 <BASE_ROOT>/.parafork/<WORKTREE_ID>/
@@ -161,7 +161,7 @@ squash = true          # merge：true=--squash，false=--no-ff
 复用审批门闩：
 - 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
 - CLI 门闩：`--yes --i-am-maintainer`
-- 两者必须同时满足，`init --reuse` / `watch --reuse-current` 才会放行。
+- 两者必须同时满足，`init --reuse` 才会放行。
 
 ---
 
@@ -182,7 +182,7 @@ NEXT=<copy/paste next step>
 
 Contributor 最短路径（典型）：
 
-1) 运行默认固定流程（`watch`；无参等价）：
+1) 运行默认固定流程（无参）：
 
 Windows（PowerShell）：
 - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1"`
@@ -190,22 +190,18 @@ Windows（PowerShell）：
 Bash（Linux/macOS/WSL/Git-Bash）：
 - `bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh"`
 
-> 可从 base repo / worktree 子目录 / worktree 根目录启动；默认总是 `init --new`（不自动复用），并执行 `check exec`（摘要 + 校验）。
->
-> 需要只跑一次：加 `watch --once`；需要复用当前 worktree：用 `PARAFORK_APPROVE_REUSE=1 watch --reuse-current --yes --i-am-maintainer`；需要合并前材料与检查：用 `watch --phase merge --once --reuse-current`（若复用，同样需要复用审批双门闩）。
+> 可从 base repo / worktree 子目录 / worktree 根目录启动；默认总是 `init --new`（不自动复用），随后执行 `do exec`（摘要 + 校验）。
 
-2) 按 task 微循环推进（`watch` 不会自动 commit）：
+2) 按 task 微循环推进（`do exec` 不会自动 commit）：
    - 更新 `paradoc/Exec.md`（What/Why/Verify）
    - 运行 `do commit --message "..."` 保存进度：
      - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" do commit --message "..."`
      - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" do commit --message "..."`
-   - 仅当 `custom.autoplan=true` 时维护 `paradoc/Plan.md`（会被 `check` 纳入检查）
+   - 需要时可运行：`do pull`、`check status|diff|log|review`
 
 3) 合并前：
 - 写 `paradoc/Merge.md`（必须包含验收/复现步骤关键字：Acceptance / Repro）
-- 推荐：先跑 `watch --phase merge --once --reuse-current` 生成材料 + 检查，并按 `NEXT` 执行：
-  - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" watch --phase merge --once --reuse-current`
-  - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" watch --phase merge --once --reuse-current`
+- 可先跑 `check merge` 生成材料 + 检查，并按 `NEXT` 执行
 
 4) 合并回 base（仅 maintainer；需要本地批准 + CLI 门闩）：
 
@@ -217,31 +213,28 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 - 合并：`PARAFORK_APPROVE_MERGE=1 bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" merge --yes --i-am-maintainer`
 
 不确定自己在哪个 worktree：
-- PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" debug`
-- Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" debug`
+- PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" help --debug`
+- Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" help --debug`
 
 ---
 
 ## 8. 顶层命令与分类
 
 help 中仅展示以下顶层命令：
-- `help` / `debug` / `init` / `watch`
-- `check [topic]`
+- `help` / `init`
 - `do <action>`
+- `check [topic]`
 - `merge`（仅 maintainer；需双门闩）
 
 允许在 base repo / 任意目录运行（base-allowed）：
-- `parafork help`
-- `parafork debug`
+- `parafork help [debug|--debug]`
 - `parafork init ...`
-- `parafork watch ...`（默认命令；无参等价）
 
 必须在 parafork worktree 中运行（worktree-required；脚本会自动切到 `WORKTREE_ROOT`）：
-- `parafork check exec|merge|plan [--strict]`
-- `parafork check status|diff|log|review ...`
-- `parafork do commit|pull ...`
+- `parafork do exec|commit|pull ...`
+- `parafork check merge|status|diff|log|review ...`
 - `parafork merge ...`（仅 maintainer；需双门闩）
 
 兼容性说明：
-- 仅支持 canonical 顶层命令：`help/debug/init/watch/check/do/merge`。
-- `status/commit/pull/diff/log/review` 顶层命令与 `check --phase` 语法均不再支持。
+- 仅支持 canonical 顶层命令：`help/init/do/check/merge`。
+- `watch`、顶层 `debug`、`check exec`、`check plan` 均不再支持。

@@ -11,43 +11,45 @@
 
 `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" <cmd> [args...]`
 
-> 无参等价：`watch`（默认固定流程）
+> 无参默认流程：`init --new` + `do exec`（单次）
 
 ## 0) 定位（可选）
 
-- 不确定当前目录/是否在 worktree：运行 `parafork debug`（base-allowed）。
+- 不确定当前目录/是否在 worktree：运行 `parafork help --debug`（base-allowed）。
 
 ## 1) 默认固定流程（推荐）
 
-- 直接运行（默认 `watch`）：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1"`
+- 直接运行：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1"`
   - 可从 base repo / worktree 子目录 / worktree 根目录启动
-  - 默认总是 `init --new`（不自动复用），并执行 `check exec`（摘要 + 校验）
-- 只跑一次不进入循环：`... watch --once`
-- 显式复用当前 worktree（需人类审批双门闩）：`$env:PARAFORK_APPROVE_REUSE=1; ... watch --reuse-current --yes --i-am-maintainer`
-- 合并前材料与检查（必须显式复用）：`... watch --phase merge --once --reuse-current`
+  - 默认总是 `init --new`（不自动复用），随后执行 `do exec`（摘要 + 校验 + NEXT）
 
-> `watch` 不会自动 `do commit/do pull/merge`；只在安全时输出一次 `NEXT`（可复制执行）。
+> `do exec` 不会自动 `do commit/do pull/merge`；只输出一次 `NEXT`（可复制执行）。
 
 ## 2) 手动子命令（高级）
 
 - 新建 worktree：`... init --new`
-- 复用当前 worktree（补写 `WORKTREE_USED=1`，并刷新锁；需人类审批双门闩）：`$env:PARAFORK_APPROVE_REUSE=1; ... init --reuse --yes --i-am-maintainer`
+- 复用当前 worktree（补写 `WORKTREE_USED=1`，并刷新锁；需人类审批双门闩）：
+  - `$env:PARAFORK_APPROVE_REUSE=1; ... init --reuse --yes --i-am-maintainer`
 
 在 worktree 内（任意子目录均可；脚本会切到 `WORKTREE_ROOT`）：
+- `... do exec`
+- `... do exec --loop --interval 2`
 - `... check status`
-- `... check exec`
+- `... check diff`
+- `... check log --limit 20`
+- `... check review`
 
 每个 task 微循环（不自动 commit）：
 - 更新计划 / `paradoc/Exec.md`
 - `... do commit --message "..."`
-
-需要时：`... do pull` / `... check diff` / `... check log` / `... check review`
+- 需要时：`... do pull`
 
 ## 3) Merge（仅 maintainer）
 
-- 推荐：先跑 `... watch --phase merge --once --reuse-current`，按 `NEXT` 执行 merge
+- 可选先检查：`... check merge`
 - 批准门闩（任选其一）：`$env:PARAFORK_APPROVE_MERGE=1` 或 base repo 本地 git config
-- 合并：`$env:PARAFORK_APPROVE_MERGE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`
+- 合并（会自动触发 merge 前检查链）：
+  - `$env:PARAFORK_APPROVE_MERGE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`
 
 ## 4) 并发锁冲突（人工接管）
 
