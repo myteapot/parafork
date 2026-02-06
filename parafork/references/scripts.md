@@ -11,7 +11,7 @@
 - `parafork help`
 - `parafork debug`
 - `parafork init [--new|--reuse] ...`
-- `parafork watch ...`（默认命令；无参等价 `watch`）
+- `parafork watch [--new|--reuse-current] ...`（默认命令；无参等价 `watch`，默认新建）
 
 ## worktree-required（必须在 parafork worktree 中；脚本会自动切到 WORKTREE_ROOT）
 - `parafork check [topic] ...`

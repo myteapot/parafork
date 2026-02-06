@@ -86,7 +86,7 @@
 
 ## 3. 目标仓库内“会出现”的内容（脚本运行后）
 
-`init`（`parafork init --new`；或直接运行默认 `watch` 让它自动 bootstrap）会创建：
+`init`（`parafork init --new`；或直接运行默认 `watch` 触发新建）会创建：
 
 ```
 <BASE_ROOT>/.parafork/<WORKTREE_ID>/
@@ -180,9 +180,9 @@ Windows（PowerShell）：
 Bash（Linux/macOS/WSL/Git-Bash）：
 - `bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh"`
 
-> 可从 base repo / worktree 子目录 / worktree 根目录启动；会自动 `init --new` 或复用“最新 worktree”，并执行 `check exec`（摘要 + 校验）。
+> 可从 base repo / worktree 子目录 / worktree 根目录启动；默认总是 `init --new`（不自动复用），并执行 `check exec`（摘要 + 校验）。
 >
-> 需要只跑一次：加 `watch --once`；需要合并前材料与检查：用 `watch --phase merge --once`。
+> 需要只跑一次：加 `watch --once`；需要复用当前 worktree：用 `watch --reuse-current`；需要合并前材料与检查：用 `watch --phase merge --once --reuse-current`。
 
 2) 按 task 微循环推进（`watch` 不会自动 commit）：
    - 更新 `paradoc/Exec.md`（What/Why/Verify）
@@ -193,9 +193,9 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 
 3) 合并前：
 - 写 `paradoc/Merge.md`（必须包含验收/复现步骤关键字：Acceptance / Repro）
-- 推荐：先跑 `watch --phase merge --once` 生成材料 + 检查，并按 `NEXT` 执行：
-  - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" watch --phase merge --once`
-  - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" watch --phase merge --once`
+- 推荐：先跑 `watch --phase merge --once --reuse-current` 生成材料 + 检查，并按 `NEXT` 执行：
+  - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" watch --phase merge --once --reuse-current`
+  - Bash：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" watch --phase merge --once --reuse-current`
 
 4) 合并回 base（仅 maintainer；需要本地批准 + CLI 门闩）：
 

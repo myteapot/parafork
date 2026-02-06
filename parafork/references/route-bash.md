@@ -23,9 +23,10 @@
 
 - 直接运行（默认 `watch`）：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh"`
   - 可从 base repo / worktree 子目录 / worktree 根目录启动
-  - 会自动 `init --new` 或复用“最新 worktree”，并执行 `check exec`（摘要 + 校验）
+  - 默认总是 `init --new`（不自动复用），并执行 `check exec`（摘要 + 校验）
 - 只跑一次不进入循环：`... watch --once`
-- 合并前材料与检查：`... watch --phase merge --once`
+- 显式复用当前 worktree：`... watch --reuse-current`
+- 合并前材料与检查（必须显式复用）：`... watch --phase merge --once --reuse-current`
 
 > `watch` 不会自动 `do commit/do pull/merge`；只在安全时输出一次 `NEXT`（可复制执行）。
 
@@ -46,6 +47,6 @@
 
 ## 3) Merge（仅 maintainer）
 
-- 推荐：先跑 `... watch --phase merge --once`，按 `NEXT` 执行 merge
+- 推荐：先跑 `... watch --phase merge --once --reuse-current`，按 `NEXT` 执行 merge
 - 批准门闩（任选其一）：临时环境变量 `PARAFORK_APPROVE_MERGE=1` 或 base repo 本地 git config
 - 合并：`PARAFORK_APPROVE_MERGE=1 bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" merge --yes --i-am-maintainer`

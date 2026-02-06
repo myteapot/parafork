@@ -24,7 +24,7 @@ Commands:
   help
   debug
   init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
-  watch [--once] [--interval <sec>] [--phase exec|merge] [--new]
+  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]
   check [topic] [args...]
   do <action> [args...]
   merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
@@ -47,6 +47,7 @@ Compatibility (deprecated but supported):
 
 Notes:
   - Default (no cmd): watch
+  - watch defaults to creating a new worktree; use --reuse-current for explicit reuse.
   - watch does not auto-commit/merge; it only prints NEXT when safe.
 "@
 }
@@ -1777,6 +1778,7 @@ function CmdWatch {
   $interval = 2
   $phase = 'exec'
   $forceNew = $false
+  $reuseCurrent = $false
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
@@ -1795,12 +1797,13 @@ function CmdWatch {
         continue
       }
       '--new' { $forceNew = $true; $i++; continue }
+      '--reuse-current' { $reuseCurrent = $true; $i++; continue }
       '--help' {
-        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new]"
+        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]"
         return 0
       }
       '-h' {
-        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new]"
+        Write-Output "Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]"
         return 0
       }
       default { ParaforkDie ("unknown arg: {0}" -f $a) }
@@ -1814,6 +1817,16 @@ function CmdWatch {
     ParaforkDie ("invalid --interval: {0}" -f $interval)
   }
 
+  if ($forceNew -and $reuseCurrent) {
+    ParaforkDie '--new and --reuse-current are mutually exclusive'
+  }
+
+  if ($phase -eq 'merge' -and -not $reuseCurrent) {
+    Write-Output 'REFUSED: watch --phase merge requires explicit --reuse-current'
+    ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current'))
+    return 1
+  }
+
   $pwdNow = (Get-Location).Path
   $symbolPath = ParaforkSymbolFindUpwards $pwdNow
   $inWorktree = $false
@@ -1824,7 +1837,17 @@ function CmdWatch {
     }
   }
 
-  if ($inWorktree) {
+  if ($reuseCurrent) {
+    if (-not $inWorktree) {
+      Write-Output 'REFUSED: --reuse-current requires being inside an existing parafork worktree'
+      $reuseNext = ParaforkEntryCmd @('watch', '--reuse-current')
+      if ($phase -eq 'merge') {
+        $reuseNext = ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current')
+      }
+      ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' ("cd <WORKTREE_ROOT>; " + $reuseNext)
+      return 1
+    }
+
     $worktreeRoot = ParaforkSymbolGet $symbolPath 'WORKTREE_ROOT'
     if ([string]::IsNullOrEmpty($worktreeRoot)) {
       ParaforkDie "missing WORKTREE_ROOT in $symbolPath"
@@ -1832,28 +1855,21 @@ function CmdWatch {
     $null = Set-Location -LiteralPath $worktreeRoot
     EnsureWorktreeUsed $worktreeRoot (Join-Path $worktreeRoot '.worktree-symbol')
   } else {
-    $baseRoot = ParaforkGitToplevel
+    $baseRoot = $null
+    if ($inWorktree) {
+      $baseRoot = ParaforkSymbolGet $symbolPath 'BASE_ROOT'
+    } else {
+      $baseRoot = ParaforkGitToplevel
+    }
+
     if (-not $baseRoot) {
       ParaforkPrintOutputBlock 'UNKNOWN' $invocationPwd 'FAIL' (ParaforkEntryCmd @('help'))
       ParaforkDie 'not in a git repo and no .worktree-symbol found'
     }
 
-    $chosen = $null
-    if (-not $forceNew) {
-      $roots = ParaforkListWorktreesNewestFirst $baseRoot
-      if ($roots -and $roots.Count -gt 0) {
-        $chosen = $roots[0]
-      }
-    }
-
-    if ($chosen) {
-      $null = Set-Location -LiteralPath $chosen
-      EnsureWorktreeUsed $chosen (Join-Path $chosen '.worktree-symbol')
-    } else {
-      $null = Set-Location -LiteralPath $baseRoot
-      $created = InitNewWorktree
-      $null = Set-Location -LiteralPath $created.WorktreeRoot
-    }
+    $null = Set-Location -LiteralPath $baseRoot
+    $created = InitNewWorktree
+    $null = Set-Location -LiteralPath $created.WorktreeRoot
   }
 
   $guard = ParaforkGuardWorktree
@@ -1870,7 +1886,7 @@ function CmdWatch {
     DoStatus $false
     DoReview $false
     if (-not (DoCheck -Phase 'merge' -Strict:$false -Mode 'watch')) {
-      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('watch', '--phase', 'merge', '--once')))
+      ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'FAIL' ("fix issues then rerun: " + (ParaforkEntryCmd @('watch', '--phase', 'merge', '--once', '--reuse-current')))
       return 1
     }
     ParaforkPrintOutputBlock $worktreeId $worktreeRoot 'PASS' ("PARAFORK_APPROVE_MERGE=1 " + (ParaforkEntryCmd @('merge', '--yes', '--i-am-maintainer')))

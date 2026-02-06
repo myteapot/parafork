@@ -1,6 +1,6 @@
 ---
 name: parafork
-description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；命令： help/debug/init/watch/check/do/merge。默认：任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
+description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固定流程；命令： help/debug/init/watch/check/do/merge。默认：watch 始终新建 worktree，复用需显式 --reuse-current 或 init --reuse；任何写操作（含 apply_patch）必须先 init 或 watch 引导进入 WORKTREE_ROOT；base repo 默认只读（仅 help/init/debug/watch）。系统相关命令见 references/route-*.md。"
 ---
 ---------------------- Parafork SKILL.md开始符号 ----------------------
 # Parafork技能协议
@@ -11,9 +11,13 @@ description: "单入口脚本优先的 Git worktree 工作流（默认 watch 固
 
 ## MUST
 - base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；除 `help/init/debug/watch` 外，不在 base repo 路径下运行任何脚本。
-- 写操作必须进 worktree：任何 WRITE/SIDE-EFFECT 动作前必须先运行 `init`（或直接运行默认 `watch`）创建/复用 worktree，并进入 `WORKTREE_ROOT` 后再继续。
+- 写操作必须进 worktree：任何 WRITE/SIDE-EFFECT 动作前必须先运行 `init`（或直接运行默认 `watch`）进入 worktree，并进入 `WORKTREE_ROOT` 后再继续。
   - 在 base repo：`init` 无参等价 `--new`（推荐显式 `--new`）。
   - 在 worktree 内：`init` 无参会 FAIL，必须显式 `--reuse` 或 `--new`。
+- `watch` 默认新建：`watch`/无参入口始终走新建 worktree；不允许自动复用“最新 worktree”。
+- 复用必须显式：仅 `watch --reuse-current` 或 `init --reuse` 允许复用。
+- 若检测到当前位于 worktree：agent 必须先询问人类“新建还是复用当前”；未获明确同意前不得复用。
+- merge 前检查必须显式复用：`watch --phase merge` 必须带 `--reuse-current`，避免在新 worktree 上进入空审查/空合并候选流程。
 - 脚本优先：存在对应脚本时，禁止用裸 `git` 做同语义操作；必须超出脚本能力时先申请人类显式同意（给出命令、风险、回退）。
 - 目录门闩：worktree-required 子命令只能在 parafork worktree 中执行（脚本会自动切到 `WORKTREE_ROOT`）；不确定位置先跑 `debug` 或直接跑 `watch`。
 - 顺序门闩：worktree-only 脚本要求 `.worktree-symbol: WORKTREE_USED=1`；旧 worktree 需先 `init --reuse` 补写。

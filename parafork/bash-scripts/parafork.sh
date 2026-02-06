@@ -29,7 +29,7 @@ Commands:
   help
   debug
   init [--new|--reuse] [--base-branch <branch>] [--remote <name>] [--no-remote] [--no-fetch] [--yes] [--i-am-maintainer]
-  watch [--once] [--interval <sec>] [--phase exec|merge] [--new]
+  watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]
   check [topic] [args...]
   do <action> [args...]
   merge [--message "<msg>"] [--no-fetch] [--allow-config-drift] [--yes] [--i-am-maintainer]
@@ -52,6 +52,7 @@ Compatibility (deprecated but supported):
 
 Notes:
   - Default (no cmd): watch
+  - watch defaults to creating a new worktree; use --reuse-current for explicit reuse.
   - watch does not auto-commit/merge; it only prints NEXT when safe.
 EOF
 }
@@ -1386,6 +1387,7 @@ cmd_watch() {
   local interval="2"
   local phase="exec"
   local force_new="false"
+  local reuse_current="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1405,9 +1407,13 @@ cmd_watch() {
         force_new="true"
         shift
         ;;
+      --reuse-current)
+        reuse_current="true"
+        shift
+        ;;
       -h|--help)
         cat <<EOF
-Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new]
+Usage: $ENTRY_CMD watch [--once] [--interval <sec>] [--phase exec|merge] [--new|--reuse-current]
 EOF
         exit 0
         ;;
@@ -1426,6 +1432,16 @@ EOF
     parafork_die "invalid --interval: $interval"
   fi
 
+  if [[ "$force_new" == "true" && "$reuse_current" == "true" ]]; then
+    parafork_die "--new and --reuse-current are mutually exclusive"
+  fi
+
+  if [[ "$phase" == "merge" && "$reuse_current" != "true" ]]; then
+    echo "REFUSED: watch --phase merge requires explicit --reuse-current"
+    parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD watch --phase merge --once --reuse-current"
+    exit 1
+  fi
+
   local pwd
   pwd="$(pwd -P)"
 
@@ -1439,7 +1455,17 @@ EOF
     fi
   fi
 
-  if [[ "$in_worktree" == "true" ]]; then
+  if [[ "$reuse_current" == "true" ]]; then
+    if [[ "$in_worktree" != "true" ]]; then
+      echo "REFUSED: --reuse-current requires being inside an existing parafork worktree"
+      local reuse_next="$ENTRY_CMD watch --reuse-current"
+      if [[ "$phase" == "merge" ]]; then
+        reuse_next="$ENTRY_CMD watch --phase merge --once --reuse-current"
+      fi
+      parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "cd <WORKTREE_ROOT> && $reuse_next"
+      exit 1
+    fi
+
     local worktree_root
     worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || true)"
     [[ -n "$worktree_root" ]] || parafork_die "missing WORKTREE_ROOT in $symbol_path"
@@ -1453,29 +1479,25 @@ EOF
     fi
   else
     local base_root
-    base_root="$(parafork_git_toplevel || true)"
+    if [[ "$in_worktree" == "true" ]]; then
+      base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || true)"
+    else
+      base_root="$(parafork_git_toplevel || true)"
+    fi
+
     if [[ -z "$base_root" ]]; then
       parafork_print_output_block "UNKNOWN" "$INVOCATION_PWD" "FAIL" "$ENTRY_CMD help"
       parafork_die "not in a git repo and no .worktree-symbol found"
     fi
 
-    local chosen=""
-    if [[ "$force_new" != "true" ]]; then
-      chosen="$(parafork_list_worktrees_newest_first "$base_root" | head -n 1 || true)"
-    fi
+    cd "$base_root"
+    cmd_init --new
 
-    if [[ -n "$chosen" ]]; then
-      cd "$chosen"
-      cmd_init --reuse
-      cd "$chosen"
-    else
-      cd "$base_root"
-      cmd_init --new
-      # init prints WORKTREE_ROOT; re-find newest after init
-      chosen="$(parafork_list_worktrees_newest_first "$base_root" | head -n 1 || true)"
-      [[ -n "$chosen" ]] || parafork_die "failed to locate new worktree"
-      cd "$chosen"
-    fi
+    local chosen=""
+    # init prints WORKTREE_ROOT; re-find newest after init
+    chosen="$(parafork_list_worktrees_newest_first "$base_root" | head -n 1 || true)"
+    [[ -n "$chosen" ]] || parafork_die "failed to locate new worktree"
+    cd "$chosen"
   fi
 
   if ! parafork_guard_worktree; then
@@ -1490,7 +1512,7 @@ EOF
     do_status "false"
     do_review "false"
     if ! do_check "merge" "false" "watch"; then
-      parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues then rerun: $ENTRY_CMD watch --phase merge --once"
+      parafork_print_output_block "$worktree_id" "$worktree_root" "FAIL" "fix issues then rerun: $ENTRY_CMD watch --phase merge --once --reuse-current"
       exit 1
     fi
     parafork_print_output_block "$worktree_id" "$worktree_root" "PASS" "PARAFORK_APPROVE_MERGE=1 $ENTRY_CMD merge --yes --i-am-maintainer"
