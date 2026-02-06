@@ -36,9 +36,7 @@
 
 2) 安全默认（Safe by default）
 - 默认阻止任何可能影响 base branch 的动作。
-- 所有“回主分支”的动作必须同时满足：
-  - 本地批准（env 或 base repo 的本地 git config）
-  - CLI 二次门闩（`--yes --i-am-maintainer`）
+- 所有“回主分支”的动作必须携带 CLI 二次门闩（`--yes --i-am-maintainer`）。
 
 3) 目录强约束（Worktree-root guard）
 - 除 `help/init` 外，其余子命令必须在 parafork worktree 中执行（脚本会自动切到 `WORKTREE_ROOT`）。
@@ -153,9 +151,8 @@ squash = true          # merge：true=--squash，false=--no-ff
 Core-Lite 约束：创建/检查/合并均仅基于本地 `base.branch` 的已提交状态；不再依赖 remote 同步路径。
 
 复用审批门闩：
-- 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
 - CLI 门闩：`--yes --i-am-maintainer`
-- 两者必须同时满足，`init --reuse` 才会放行。
+- 必须满足后，`init --reuse` 才会放行。
 
 ---
 
@@ -197,14 +194,13 @@ Bash（Linux/macOS/WSL/Git-Bash）：
 - 写 `paradoc/Merge.md`（必须包含验收/复现步骤关键字：Acceptance / Repro）
 - 可先跑 `check merge` 生成材料 + 检查，并按 `NEXT` 执行
 
-4) 合并回 base（仅 maintainer；需要本地批准 + CLI 门闩）：
+4) 合并回 base（仅 maintainer；需要 CLI 门闩）：
 
 Windows（PowerShell）：
-- 一次性 env 批准：`$env:PARAFORK_APPROVE_MERGE=1`
 - 合并：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" merge --yes --i-am-maintainer`
 
 Bash（Linux/macOS/WSL/Git-Bash）：
-- 合并：`PARAFORK_APPROVE_MERGE=1 bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" merge --yes --i-am-maintainer`
+- 合并：`bash "<PARAFORK_BASH_SCRIPTS>/parafork.sh" merge --yes --i-am-maintainer`
 
 不确定自己在哪个 worktree：
 - PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\parafork.ps1" help --debug`
@@ -218,7 +214,7 @@ help 中仅展示以下顶层命令：
 - `help` / `init`
 - `do <action>`
 - `check [topic]`
-- `merge`（仅 maintainer；需双门闩）
+- `merge`（仅 maintainer；需 CLI 门闩）
 
 允许在 base repo / 任意目录运行（base-allowed）：
 - `parafork help [debug|--debug]`
@@ -227,7 +223,7 @@ help 中仅展示以下顶层命令：
 必须在 parafork worktree 中运行（worktree-required；脚本会自动切到 `WORKTREE_ROOT`）：
 - `parafork do exec|commit ...`
 - `parafork check merge|status ...`
-- `parafork merge ...`（仅 maintainer；需双门闩）
+- `parafork merge ...`（仅 maintainer；需 CLI 门闩）
 
 兼容性说明：
 - 仅支持 canonical 顶层命令：`help/init/do/check/merge`。

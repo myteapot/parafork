@@ -5,7 +5,7 @@
 验证本次重构后行为是否与 Core-Lite 预期一致，重点覆盖：
 
 - 默认入口（无参）
-- `init --reuse` 双门闩
+- `init --reuse` CLI 门闩
 - 并发锁冲突拒绝与接管
 - `do commit` 污染防护
 - `check merge --strict` 严格模式
@@ -44,18 +44,13 @@
   - 实际：`STATUS=FAIL`，并给出 `--reuse/--new` 选择与 NEXT
   - 结论：✅
 
-- `T03a_reuse_missing_local_approval`
-  - 预期：缺本地批准拒绝
-  - 实际：拒绝并提示 `PARAFORK_APPROVE_REUSE`/git config
-  - 结论：✅
-
-- `T03b_reuse_missing_cli_gate`
+- `T03a_reuse_missing_cli_gate`
   - 预期：缺 `--yes --i-am-maintainer` 拒绝
   - 实际：拒绝（`--reuse requires --yes --i-am-maintainer`）
   - 结论：✅
 
-- `T03c_reuse_full_gate`
-  - 预期：双门闩齐备通过
+- `T03b_reuse_full_gate`
+  - 预期：CLI 门闩齐备通过
   - 实际：`MODE=reuse`，`WORKTREE_USED=1`，`STATUS=PASS`
   - 结论：✅
 
@@ -84,11 +79,21 @@
   - 实际：`STATUS=PASS`，输出命令面与 NEXT 正常
   - 结论：✅
 
+---
+
+### C) 门闩模型变更补充验证（CLI-only + 审批前置）
+
+- 范围：复用/合并的本地门闩移除，仅保留 CLI 门闩（`--yes --i-am-maintainer`）；并在 skill/route 文档中明确“先人类审批，再执行带门闩命令”。
+- 代码核对：Bash 与 PowerShell 的 `init --reuse`、`merge` 均仅检查 CLI 门闩，未再读取本地 approval 配置。
+- 文档核对：`SKILL.md`、`route-bash.md`、`route-powershell.md` 已统一“审批前置”文案。
+- 冒烟复跑：`bash parafork/scripts/regression-smoke.sh` `EXIT=0`，命令面与帮助文本保持稳定。
+- 结论：✅ 行为与当前设计一致（高风险动作由 CLI 门闩触发，策略层要求先获人类明确批准）。
+
 ## 总结
 
 - 本轮覆盖的关键行为与预期一致。
 - 重构目标（不改变外部 CLI 语义，仅内部收敛）在已测范围内成立。
-- 建议后续在真实 worktree 流程下补充 `merge` 双门闩与冲突态人工接管的人工验收（涉及 maintainer 决策链）。
+- 建议后续在真实 worktree 流程下补充 `merge` CLI 门闩与冲突态人工接管的人工验收（涉及 maintainer 决策链）。
 
 ## 备注
 

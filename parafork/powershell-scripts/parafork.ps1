@@ -53,7 +53,7 @@ Entry behavior:
 
 Options:
   --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires --yes --i-am-maintainer)
   --yes                    Confirmation gate for risky flags
   --i-am-maintainer        Confirmation gate for risky flags
 "@
@@ -91,13 +91,17 @@ function ParaforkUsageMerge {
   @"
 Usage: $ENTRY_CMD merge [options]
 
-Preview-only unless all gates are satisfied:
-- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
+Preview-only unless CLI gate is satisfied:
 - CLI gate: --yes --i-am-maintainer
 
 Options:
   --message "<msg>"         Override merge commit message (squash mode)
 "@
+}
+
+function ParaforkIsHelpFlag {
+  param([string]$Value)
+  return ($Value -eq '--help' -or $Value -eq '-h')
 }
 
 function ParaforkWorkdirRoot {
@@ -195,7 +199,7 @@ function ParaforkGuardWorktree {
   $worktreeUsed = ParaforkSymbolGet $symbolPath 'WORKTREE_USED'
   if ($worktreeUsed -ne '1') {
     Write-Output 'REFUSED: worktree not entered (WORKTREE_USED!=1)'
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' ('PARAFORK_APPROVE_REUSE=1 ' + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer')))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
     return $null
   }
 
@@ -213,8 +217,15 @@ function ParaforkGuardWorktree {
     Write-Output 'REFUSED: worktree locked by another agent'
     ParaforkPrintKv 'LOCK_OWNER' $lockOwner
     ParaforkPrintKv 'AGENT_ID' $agentId
-    $next = "cd " + (ParaforkQuotePs $worktreeRoot) + "; PARAFORK_APPROVE_REUSE=1 " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' $next
+
+    $safeNext = ParaforkEntryCmd @('init', '--new')
+    $takeoverNext = "cd " + (ParaforkQuotePs $worktreeRoot) + "; " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
+
+    ParaforkPrintKv 'SAFE_NEXT' $safeNext
+    ParaforkPrintKv 'TAKEOVER_NEXT' $takeoverNext
+    Write-Output 'RISK: takeover may interrupt another in-flight session; require explicit human approval.'
+
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' $safeNext
     return $null
   }
 
@@ -698,7 +709,7 @@ function CmdDebug {
     $chosenId = 'UNKNOWN'
   }
 
-  $next = "cd " + (ParaforkQuotePs $chosen) + "; PARAFORK_APPROVE_REUSE=1 " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
+  $next = "cd " + (ParaforkQuotePs $chosen) + "; " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
 
   $body = {
     Write-Output ""
@@ -721,6 +732,12 @@ function CmdInit {
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
+
+    if (ParaforkIsHelpFlag $a) {
+      Write-Output (ParaforkUsageInit)
+      return 0
+    }
+
     switch ($a) {
       '--new' {
         if ($mode -ne 'auto' -and $mode -ne 'new') {
@@ -747,14 +764,6 @@ function CmdInit {
         $iam = $true
         $i++
         continue
-      }
-      '--help' {
-        Write-Output (ParaforkUsageInit)
-        return 0
-      }
-      '-h' {
-        Write-Output (ParaforkUsageInit)
-        return 0
       }
       default {
         ParaforkDie ("unknown arg: {0}" -f $a)
@@ -794,7 +803,7 @@ function CmdInit {
     ParaforkPrintKv 'BASE_ROOT' $symbolBaseRoot
     Write-Output ""
     Write-Output 'Choose one:'
-    Write-Output ("- Reuse current worktree: {0}" -f ('PARAFORK_APPROVE_REUSE=1 ' + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))))
+    Write-Output ("- Reuse current worktree: {0}" -f (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer')))
     Write-Output ("- Create new worktree:    {0}" -f (ParaforkEntryCmd @('init', '--new')))
     ParaforkPrintOutputBlock $wtId $invocationPwd 'FAIL' (ParaforkEntryCmd @('init', '--new'))
     return 1
@@ -812,14 +821,6 @@ function CmdInit {
   if ($mode -eq 'reuse') {
     if ([string]::IsNullOrEmpty($symbolBaseRoot)) {
       ParaforkDie "missing BASE_ROOT in .worktree-symbol: $symbolPath"
-    }
-
-    if (-not (ParaforkIsReuseApproved $symbolBaseRoot)) {
-      Write-Output 'REFUSED: worktree reuse requires maintainer approval'
-      $reuseWorktreeId = if ([string]::IsNullOrEmpty($symbolWorktreeId)) { 'UNKNOWN' } else { $symbolWorktreeId }
-      $next = "set PARAFORK_APPROVE_REUSE=1 (or git -C " + (ParaforkQuotePs $symbolBaseRoot) + " config parafork.approval.reuse true) and rerun: " + (ParaforkEntryCmd @('init', '--reuse', '--yes', '--i-am-maintainer'))
-      ParaforkPrintOutputBlock $reuseWorktreeId $invocationPwd 'FAIL' $next
-      return 1
     }
 
     ParaforkRequireYesIam '--reuse' $yes $iam
@@ -900,7 +901,7 @@ function CmdCheckMerge {
       throw 'check failed'
     }
 
-    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' ("PARAFORK_APPROVE_MERGE=1 " + (ParaforkEntryCmd @('merge', '--yes', '--i-am-maintainer')))
+    ParaforkPrintOutputBlock $worktreeId $pwdNow 'PASS' (ParaforkEntryCmd @('merge', '--yes', '--i-am-maintainer'))
   }
 
   ParaforkInvokeLogged $guard.WorktreeRoot 'parafork check merge' $argv $body
@@ -919,19 +920,17 @@ function CmdCheck {
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
+
+    if (ParaforkIsHelpFlag $a) {
+      Write-Output (ParaforkUsageCheck)
+      return 0
+    }
+
     switch ($a) {
       '--strict' {
         $strict = $true
         $i++
         continue
-      }
-      '--help' {
-        Write-Output (ParaforkUsageCheck)
-        return 0
-      }
-      '-h' {
-        Write-Output (ParaforkUsageCheck)
-        return 0
       }
       default {
         if (-not $topicProvided) {
@@ -982,6 +981,12 @@ function CmdDoExec {
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
+
+    if (ParaforkIsHelpFlag $a) {
+      Write-Output (ParaforkUsageDoExec)
+      return 0
+    }
+
     switch ($a) {
       '--strict' { $strict = $true; $i++; continue }
       '--loop' { $loop = $true; $i++; continue }
@@ -990,14 +995,6 @@ function CmdDoExec {
         $interval = [int]$CmdArgs[$i + 1]
         $i += 2
         continue
-      }
-      '--help' {
-        Write-Output (ParaforkUsageDoExec)
-        return 0
-      }
-      '-h' {
-        Write-Output (ParaforkUsageDoExec)
-        return 0
       }
       default { ParaforkDie ("unknown arg: {0}" -f $a) }
     }
@@ -1080,6 +1077,12 @@ function CmdDoCommit {
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
+
+    if (ParaforkIsHelpFlag $a) {
+      Write-Output (ParaforkUsageDoCommit)
+      return 0
+    }
+
     switch ($a) {
       '--message' {
         if ($i + 1 -ge $CmdArgs.Count) {
@@ -1093,14 +1096,6 @@ function CmdDoCommit {
         $noCheck = $true
         $i++
         continue
-      }
-      '--help' {
-        Write-Output (ParaforkUsageDoCommit)
-        return 0
-      }
-      '-h' {
-        Write-Output (ParaforkUsageDoCommit)
-        return 0
       }
       default {
         ParaforkDie ("unknown arg: {0}" -f $a)
@@ -1177,7 +1172,7 @@ function CmdDo {
 
   if ($null -eq $CmdArgs) { $CmdArgs = @() }
 
-  if (-not $CmdArgs -or $CmdArgs.Count -eq 0 -or $CmdArgs[0] -eq '--help' -or $CmdArgs[0] -eq '-h') {
+  if (-not $CmdArgs -or $CmdArgs.Count -eq 0 -or (ParaforkIsHelpFlag $CmdArgs[0])) {
     Write-Output (ParaforkUsageDo)
     return 0
   }
@@ -1186,8 +1181,8 @@ function CmdDo {
   $rest = if ($CmdArgs.Count -gt 1) { $CmdArgs[1..($CmdArgs.Count - 1)] } else { @() }
 
   switch ($action) {
-    'exec' { $code = CmdDoExec @rest; return $code }
-    'commit' { $code = CmdDoCommit @rest; return $code }
+    'exec' { $code = CmdDoExec -CmdArgs $rest; return $code }
+    'commit' { $code = CmdDoCommit -CmdArgs $rest; return $code }
     default { ParaforkDie ("unknown action: {0}" -f $action) }
   }
 }
@@ -1203,6 +1198,12 @@ function CmdMerge {
 
   for ($i = 0; $i -lt $CmdArgs.Count; ) {
     $a = $CmdArgs[$i]
+
+    if (ParaforkIsHelpFlag $a) {
+      Write-Output (ParaforkUsageMerge)
+      return 0
+    }
+
     switch ($a) {
       '--yes' {
         $yes = $true
@@ -1221,14 +1222,6 @@ function CmdMerge {
         $message = $CmdArgs[$i + 1]
         $i += 2
         continue
-      }
-      '--help' {
-        Write-Output (ParaforkUsageMerge)
-        return 0
-      }
-      '-h' {
-        Write-Output (ParaforkUsageMerge)
-        return 0
       }
       default {
         ParaforkDie ("unknown arg: {0}" -f $a)
@@ -1255,15 +1248,6 @@ function CmdMerge {
   }
 
   $body = {
-    $approved = $false
-    if ($env:PARAFORK_APPROVE_MERGE -eq '1') {
-      $approved = $true
-    } elseif ($baseRoot) {
-      $v = (& git -C $baseRoot config --bool --default false parafork.approval.merge 2>$null | Select-Object -First 1).Trim()
-      if ($v -eq 'true') {
-        $approved = $true
-      }
-    }
 
     $currentBranch = (& git rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1).Trim()
     if ($LASTEXITCODE -ne 0) {
@@ -1313,12 +1297,6 @@ function CmdMerge {
     Write-Output ""
     Write-Output ("PREVIEW_FILES={0}...{1}" -f $baseBranch, $worktreeBranch)
     & git -C $baseRoot diff --name-status "$baseBranch...$worktreeBranch" 2>$null | ForEach-Object { $_ }
-
-    if (-not $approved) {
-      Write-Output 'REFUSED: merge not approved'
-      ParaforkPrintOutputBlock $worktreeId $pwdNow 'FAIL' 'set PARAFORK_APPROVE_MERGE=1 (or git config parafork.approval.merge=true) and rerun'
-      throw 'merge not approved'
-    }
 
     if (-not $yes -or -not $iam) {
       Write-Output 'REFUSED: missing CLI gate'
@@ -1432,7 +1410,7 @@ try {
     exit $exitCode
   }
 
-  if ($cmd -eq '-h' -or $cmd -eq '--help') {
+  if (ParaforkIsHelpFlag $cmd) {
     $cmd = 'help'
     $argv = @()
   } else {

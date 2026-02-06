@@ -192,20 +192,6 @@ parafork_agent_id() {
   printf '%s@%s' "$user" "$host"
 }
 
-parafork_is_reuse_approved() {
-  local base_root="$1"
-
-  if [[ "${PARAFORK_APPROVE_REUSE:-0}" == "1" ]]; then
-    return 0
-  fi
-
-  if [[ -n "$base_root" ]] && [[ "$(git -C "$base_root" config --bool --default false parafork.approval.reuse 2>/dev/null || true)" == "true" ]]; then
-    return 0
-  fi
-
-  return 1
-}
-
 parafork_write_worktree_lock() {
   local symbol_path="$1"
   local agent_id lock_at
@@ -367,7 +353,7 @@ parafork_guard_worktree() {
   worktree_used="$(parafork_symbol_get "$symbol_path" "WORKTREE_USED" || true)"
   if [[ "$worktree_used" != "1" ]]; then
     echo "REFUSED: worktree not entered (WORKTREE_USED!=1)"
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "PARAFORK_APPROVE_REUSE=1 $entry_cmd init --reuse --yes --i-am-maintainer"
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$entry_cmd init --reuse --yes --i-am-maintainer"
     return 1
   fi
 
@@ -386,7 +372,16 @@ parafork_guard_worktree() {
     echo "REFUSED: worktree locked by another agent"
     parafork_print_kv LOCK_OWNER "$lock_owner"
     parafork_print_kv AGENT_ID "$agent_id"
-    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "cd \"$worktree_root\" && PARAFORK_APPROVE_REUSE=1 $entry_cmd init --reuse --yes --i-am-maintainer"
+
+    local safe_next takeover_next
+    safe_next="$entry_cmd init --new"
+    takeover_next="cd \"$worktree_root\" && $entry_cmd init --reuse --yes --i-am-maintainer"
+
+    parafork_print_kv SAFE_NEXT "$safe_next"
+    parafork_print_kv TAKEOVER_NEXT "$takeover_next"
+    echo "RISK: takeover may interrupt another in-flight session; require explicit human approval."
+
+    parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "$safe_next"
     return 1
   fi
 

@@ -28,8 +28,9 @@
 ## 2) 手动子命令（高级）
 
 - 新建 worktree：`... init --new`
-- 复用当前 worktree（补写 `WORKTREE_USED=1`，并刷新锁；需人类审批双门闩）：
-  - `$env:PARAFORK_APPROVE_REUSE=1; ... init --reuse --yes --i-am-maintainer`
+- 复用当前 worktree（补写 `WORKTREE_USED=1`，并刷新锁；需人类审批 CLI 门闩）：
+  - 先向人类申请批准（目的、命令、风险、回退）
+  - `... init --reuse --yes --i-am-maintainer`
 
 在 worktree 内（任意子目录均可；脚本会切到 `WORKTREE_ROOT`）：
 - `... do exec`
@@ -44,12 +45,17 @@
 ## 3) Merge（仅 maintainer）
 
 - 可选先检查：`... check merge`
-- 批准门闩（任选其一）：`$env:PARAFORK_APPROVE_MERGE=1` 或 base repo 本地 git config
-- 合并（会自动触发 merge 前检查链）：
-  - `$env:PARAFORK_APPROVE_MERGE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`
+- 合并（会自动触发 merge 前检查链；需携带 CLI 门闩）：
+  - 先向人类申请批准（目的、命令、风险、回退）
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" merge --yes --i-am-maintainer`
 
-## 4) 并发锁冲突（人工接管）
+## 4) 并发锁冲突（默认新开，接管高风险）
 
-- 若提示 `REFUSED: worktree locked by another agent`，先由人类批准接管，再执行：
-  - `cd "<WORKTREE_ROOT>"`
-  - `$env:PARAFORK_APPROVE_REUSE=1; powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" init --reuse --yes --i-am-maintainer`
+- 若提示 `REFUSED: worktree locked by another agent`：
+  - 默认建议：直接新开 worktree（降低干扰风险）
+    - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" init --new`
+  - 若必须接管（高风险）：先向人类发起明确审批请求，再执行接管命令
+    - 审批请求建议至少包含：`LOCK_OWNER`、当前 `AGENT_ID`、接管风险与回退方案
+    - 接管命令：
+      - `cd "<WORKTREE_ROOT>"`
+      - `powershell -NoProfile -ExecutionPolicy Bypass -File "<PARAFORK_POWERSHELL_SCRIPTS>\\parafork.ps1" init --reuse --yes --i-am-maintainer`

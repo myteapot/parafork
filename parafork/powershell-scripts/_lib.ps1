@@ -247,26 +247,6 @@ function ParaforkAgentId {
   return ("{0}@{1}" -f $user, $host)
 }
 
-function ParaforkIsReuseApproved {
-  param([string]$BaseRoot)
-
-  if ($env:PARAFORK_APPROVE_REUSE -eq '1') {
-    return $true
-  }
-
-  if (-not [string]::IsNullOrEmpty($BaseRoot)) {
-    $v = (& git -C $BaseRoot config --bool --default false parafork.approval.reuse 2>$null | Select-Object -First 1)
-    if ($v) {
-      $v = $v.Trim()
-      if ($v -eq 'true') {
-        return $true
-      }
-    }
-  }
-
-  return $false
-}
-
 function ParaforkWriteWorktreeLock {
   param([Parameter(Mandatory = $true)][string]$SymbolPath)
 

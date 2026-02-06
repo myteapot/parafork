@@ -18,15 +18,13 @@
 - `parafork check [topic] ...`
   - `check merge [--strict]`
   - `check status`
-- `parafork merge ...`（仅 maintainer；需双门闩）
+- `parafork merge ...`（仅 maintainer；需 CLI 门闩）
 
 ## 默认入口
 - 无参运行会执行：`init --new` + `do exec`（单次检查并输出 NEXT）。
 
-## 复用审批与并发门禁
-- 复用审批（`init --reuse`）需要双门闩：
-  - 本地批准：`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`
-  - CLI 门闩：`--yes --i-am-maintainer`
+## 复用 CLI 门闩与并发门禁
+- 复用（`init --reuse`）需要 CLI 门闩：`--yes --i-am-maintainer`。
 - worktree 并发门禁通过 `.worktree-symbol` 中 `WORKTREE_LOCK*` 字段执行；锁冲突时脚本会拒绝并要求人工接管。
 
 ## 兼容性
@@ -34,5 +32,5 @@
 - 非 Core-Lite 命令/主题（如 `watch`、`do pull`、`check diff/log/review`）均不再支持。
 
 ## 回归建议
-- 重构后可按 `references/regression-checklist.md` 做最小回归，覆盖无参入口、双门闩、并发锁、污染防护与 merge 前检查链。
+- 重构后可按 `references/regression-checklist.md` 做最小回归，覆盖无参入口、CLI 门闩、并发锁、污染防护与 merge 前检查链。
 - 本次执行记录见：`references/test-report-2026-02-06.md`。

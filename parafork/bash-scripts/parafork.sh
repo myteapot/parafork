@@ -8,8 +8,6 @@ source "$SCRIPT_DIR/_lib.sh"
 INVOCATION_PWD="$(pwd -P)"
 ENTRY_CMD="bash \"$SCRIPT_DIR/parafork.sh\""
 
-PARAFORK_LAST_INIT_MODE=""
-PARAFORK_LAST_INIT_WORKTREE_ID=""
 PARAFORK_LAST_INIT_WORKTREE_ROOT=""
 
 parafork_usage_init() {
@@ -22,7 +20,7 @@ Entry behavior:
 
 Options:
   --new                    Create a new worktree session
-  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires reuse approval + --yes --i-am-maintainer)
+  --reuse                  Mark current worktree as entered (WORKTREE_USED=1; requires --yes --i-am-maintainer)
   --yes                    Confirmation gate for risky flags
   --i-am-maintainer        Confirmation gate for risky flags
 EOF
@@ -64,8 +62,7 @@ parafork_usage_merge() {
   cat <<EOF
 Usage: $ENTRY_CMD merge [options]
 
-Preview-only unless all gates are satisfied:
-- local approval: PARAFORK_APPROVE_MERGE=1 or git config parafork.approval.merge=true
+Preview-only unless CLI gate is satisfied:
 - CLI gate: --yes --i-am-maintainer
 
 Options:
@@ -200,14 +197,12 @@ cmd_debug() {
   chosen_id="$(parafork_symbol_get "$chosen/.worktree-symbol" "WORKTREE_ID" || echo "UNKNOWN")"
 
   parafork_print_kv BASE_ROOT "$base_root"
-  parafork_print_output_block "$chosen_id" "$INVOCATION_PWD" "PASS" "cd \"$chosen\" && PARAFORK_APPROVE_REUSE=1 $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+  parafork_print_output_block "$chosen_id" "$INVOCATION_PWD" "PASS" "cd \"$chosen\" && $ENTRY_CMD init --reuse --yes --i-am-maintainer"
 }
 
 cmd_init() {
   local invocation_pwd="$INVOCATION_PWD"
 
-  PARAFORK_LAST_INIT_MODE=""
-  PARAFORK_LAST_INIT_WORKTREE_ID=""
   PARAFORK_LAST_INIT_WORKTREE_ROOT=""
 
   local mode="auto" # auto|new|reuse
@@ -278,7 +273,7 @@ cmd_init() {
     parafork_print_kv BASE_ROOT "$symbol_base_root"
     echo
     echo "Choose one:"
-    echo "- Reuse current worktree: PARAFORK_APPROVE_REUSE=1 $ENTRY_CMD init --reuse --yes --i-am-maintainer"
+    echo "- Reuse current worktree: $ENTRY_CMD init --reuse --yes --i-am-maintainer"
     echo "- Create new worktree:    $ENTRY_CMD init --new"
     parafork_print_output_block "$wt_id" "$invocation_pwd" "FAIL" "$ENTRY_CMD init --new"
     return 1
@@ -298,12 +293,6 @@ cmd_init() {
       parafork_die "missing BASE_ROOT in .worktree-symbol: $symbol_path"
     fi
 
-    if ! parafork_is_reuse_approved "$symbol_base_root"; then
-      echo "REFUSED: worktree reuse requires maintainer approval"
-      parafork_print_output_block "${symbol_worktree_id:-UNKNOWN}" "$invocation_pwd" "FAIL" "set PARAFORK_APPROVE_REUSE=1 (or git -C \"$symbol_base_root\" config parafork.approval.reuse true) and rerun: $ENTRY_CMD init --reuse --yes --i-am-maintainer"
-      return 1
-    fi
-
     parafork_require_yes_i_am_maintainer_for_flag "--reuse" "$yes" "$iam"
 
     local worktree_id worktree_root
@@ -311,8 +300,6 @@ cmd_init() {
     worktree_root="$symbol_worktree_root"
     [[ -n "$worktree_root" ]] || parafork_die "missing WORKTREE_ROOT in .worktree-symbol: $symbol_path"
 
-    PARAFORK_LAST_INIT_MODE="reuse"
-    PARAFORK_LAST_INIT_WORKTREE_ID="$worktree_id"
     PARAFORK_LAST_INIT_WORKTREE_ROOT="$worktree_root"
 
     parafork_symbol_set "$symbol_path" "WORKTREE_USED" "1"
@@ -470,8 +457,6 @@ EOF
   parafork_print_kv START_COMMIT "$start_commit"
   parafork_print_kv BASE_COMMIT "$base_commit"
 
-  PARAFORK_LAST_INIT_MODE="new"
-  PARAFORK_LAST_INIT_WORKTREE_ID="$worktree_id"
   PARAFORK_LAST_INIT_WORKTREE_ROOT="$worktree_root"
 
   parafork_print_output_block "$worktree_id" "$invocation_pwd" "PASS" "cd \"$worktree_root\" && $ENTRY_CMD do exec"
@@ -485,9 +470,8 @@ do_status() {
   pwd="$(pwd -P)"
   local symbol_path="$pwd/.worktree-symbol"
 
-  local worktree_id worktree_root base_branch worktree_branch
+  local worktree_id base_branch worktree_branch
   worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
-  worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "$pwd")"
   base_branch="$(parafork_symbol_get "$symbol_path" "BASE_BRANCH" || echo "")"
   worktree_branch="$(parafork_symbol_get "$symbol_path" "WORKTREE_BRANCH" || echo "")"
 
@@ -527,8 +511,7 @@ do_check() {
   pwd="$(pwd -P)"
   local symbol_path="$pwd/.worktree-symbol"
 
-  local worktree_id worktree_root base_root
-  worktree_id="$(parafork_symbol_get "$symbol_path" "WORKTREE_ID" || echo "UNKNOWN")"
+  local worktree_root base_root
   worktree_root="$(parafork_symbol_get "$symbol_path" "WORKTREE_ROOT" || echo "$pwd")"
   base_root="$(parafork_symbol_get "$symbol_path" "BASE_ROOT" || echo "")"
 
@@ -677,7 +660,7 @@ cmd_check_merge() {
       return 1
     fi
 
-    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "PARAFORK_APPROVE_MERGE=1 $ENTRY_CMD merge --yes --i-am-maintainer"
+    parafork_print_output_block "$worktree_id" "$pwd" "PASS" "$ENTRY_CMD merge --yes --i-am-maintainer"
   }
 
   parafork_invoke_logged "$PARAFORK_WORKTREE_ROOT" "parafork check merge" "$argv_line" -- check_merge_body
@@ -936,13 +919,6 @@ cmd_merge() {
       message="parafork: merge $worktree_id"
     fi
 
-    local approved="false"
-    if [[ "${PARAFORK_APPROVE_MERGE:-0}" == "1" ]]; then
-      approved="true"
-    elif [[ "$(git -C "$base_root" config --bool --default false parafork.approval.merge 2>/dev/null)" == "true" ]]; then
-      approved="true"
-    fi
-
     local current_branch
     current_branch="$(git rev-parse --abbrev-ref HEAD)"
     if [[ -n "$worktree_branch" && "$current_branch" != "$worktree_branch" ]]; then
@@ -988,12 +964,6 @@ cmd_merge() {
 
     echo "PREVIEW_FILES=$base_branch...$worktree_branch"
     git -C "$base_root" diff --name-status "$base_branch...$worktree_branch" || true
-
-    if [[ "$approved" != "true" ]]; then
-      echo "REFUSED: merge not approved"
-      parafork_print_output_block "$worktree_id" "$pwd" "FAIL" "set PARAFORK_APPROVE_MERGE=1 (or git config parafork.approval.merge=true) and rerun"
-      return 1
-    fi
 
     if [[ "$yes" != "true" || "$iam" != "true" ]]; then
       echo "REFUSED: missing CLI gate"

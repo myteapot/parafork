@@ -28,11 +28,11 @@
    - 输出“must choose --reuse or --new”
    - `NEXT` 给出可执行恢复路径
 
-## T-03 reuse 双门闩
+## T-03 reuse CLI 门闩
 
 1) 在 worktree 内执行：`<ENTRY> init --reuse`（不带门闩）
-2) 期望：失败，并提示审批门闩。
-3) 执行：`PARAFORK_APPROVE_REUSE=1 <ENTRY> init --reuse --yes --i-am-maintainer`
+2) 期望：失败，并提示 `--yes --i-am-maintainer`。
+3) 执行：`<ENTRY> init --reuse --yes --i-am-maintainer`
 4) 期望：通过，并输出 `WORKTREE_USED=1`。
 
 ## T-04 锁冲突拒绝
@@ -42,7 +42,8 @@
 3) 期望：
    - `STATUS=FAIL`
    - 输出 `LOCK_OWNER` 与 `AGENT_ID`
-   - 输出人工接管 `NEXT`
+   - 默认 `NEXT` 推荐 `init --new`
+   - 同时给出 `SAFE_NEXT` 与 `TAKEOVER_NEXT`（接管需人类明确批准）
 
 ## T-05 commit 污染防护
 
@@ -58,12 +59,12 @@
 2) 执行：`<ENTRY> check merge`
 3) 期望：失败并报告 `placeholder remains`。
 
-## T-07 merge 双门闩
+## T-07 merge CLI 门闩
 
-1) 执行：`<ENTRY> merge`（不带审批）
-2) 期望：失败并提示 `PARAFORK_APPROVE_MERGE`。
-3) 执行：`PARAFORK_APPROVE_MERGE=1 <ENTRY> merge`（不带 `--yes --i-am-maintainer`）
-4) 期望：失败并提示 CLI 门闩。
+1) 执行：`<ENTRY> merge`（不带 `--yes --i-am-maintainer`）
+2) 期望：失败并提示 CLI 门闩。
+3) 执行：`<ENTRY> merge --yes --i-am-maintainer`
+4) 期望：不再因门闩失败（后续成败取决于 merge 前检查链与冲突情况）。
 
 ## T-08 Bash/PowerShell NEXT 语义一致
 

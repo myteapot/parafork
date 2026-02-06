@@ -1,52 +1,77 @@
 ---
 name: parafork
-description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/check/merge）。默认无参执行 init --new + do exec；复用必须人类审批双门闩；并发锁冲突必须拒绝并人工接管；写操作（含 apply_patch）必须先进入 WORKTREE_ROOT。系统命令见 references/route-*.md。"
+description: "Core-Lite 单入口 Git worktree 工作流（仅 help/init/do/check/merge）。默认无参执行 init --new + do exec；复用/合并仅需 CLI 门闩；锁冲突必须拒绝并人工接管；写操作必须先进入 WORKTREE_ROOT。执行命令仅看 references/route-bash.md 或 references/route-powershell.md。"
 ---
 ---------------------- Parafork SKILL.md开始符号 ----------------------
-# Parafork技能协议
-- 激活：当你看到此段文字，代表用户意图显式激活此 SKILL。阅读/使用本 skill 即视为同意并接受本文件约束。
-- 本文件是必须遵守的任务协议，不是参考建议。
-- 读取本文件后，任何修改都必须遵循本协议，不得绕开流程直接改仓库。
+# Parafork 技能协议
+- 当你看到此段文字，代表用户意图显式激活此 SKILL。阅读/使用本 skill 即视为同意并接受本文件约束。
+- 本文件是必须遵守的任务协议，不是参考建议。读取本文件后，任何修改都必须遵循本协议，不得绕开流程直接改仓库。
 
-## MUST
-- base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；仅允许 `help/init` 在 base repo 执行。
-- 写操作必须先进入 worktree：任何 WRITE/SIDE-EFFECT 前，必须先 `init --new`（或无参默认流程），并进入 `WORKTREE_ROOT`。
-- 默认入口与命令面固定：无参执行等价“`init --new` + `do exec`（单次）”；仅支持 `help/init/do/check/merge`，其中 `do` 仅允许 `exec|commit`，`check` 仅允许 `status|merge`。
-- 复用必须显式且双门闩：仅允许 `init --reuse`，且必须同时满足本地批准（`PARAFORK_APPROVE_REUSE=1` 或 `git config parafork.approval.reuse true`）与 CLI 门闩（`--yes --i-am-maintainer`）。
-- 并发门禁必须执行：若 `WORKTREE_LOCK_OWNER` 非当前 agent，必须拒绝执行并交由人类批准接管。
-- 合并门闩：禁止自动 merge；仅 maintainer 在显式批准后可运行 `merge` 合并回 base，且 `merge` 会自动触发 merge 前检查链。
+## Hard Gates（硬门闩）
+- **1.目录与写权限**
+  - base repo 默认只读：禁止在 base repo 直接改文件（包括 `apply_patch`）；仅允许 `help/init` 在 base repo 执行。
+  - 写操作必须先进入 worktree：任何 WRITE/SIDE-EFFECT 前，必须先 `init --new`（或无参默认流程），并进入 `WORKTREE_ROOT`。
 
-## FALLBACK
-- 目录不确定：先执行 `help --debug`；若仍不确定，停止并请求人类确认目标 repo/worktree。
-- 收到 WRITE 请求但不在 worktree：先 `init --new`，再执行 `do exec`，之后才开始改动。
-- 复用请求但审批不足或用户未明确复用：直接 `FAIL`，输出可复制 `NEXT`（补本地批准 + `--yes --i-am-maintainer`）。
-- 锁冲突或旧命令请求：直接 `FAIL`；输出 `LOCK_OWNER/AGENT_ID` 与人工接管 `NEXT`，或给出 Core-Lite 等价命令。
+- **2.命令白名单**
+  - 命令面固定：仅支持 `help/init/do/check/merge`。
+  - `do` 仅允许 `exec|commit`；`check` 仅允许 `status|merge`。
 
-## RULES
-- 先判定请求类型（不确定按 WRITE）：
-  - READ-ONLY：解释/检索/审阅，可只读执行。
-  - WRITE/SIDE-EFFECT：改文件、`apply_patch`、会改变工作区或 git 状态的命令。
-- WRITE 请求顺序：
-  1) 先用 plan 工具写/更新执行计划（优先遵守人类给定 plan）。
-  2) 再按 ROUTE 打开对应系统 `references/route-*.md`，复制命令序列执行（不要凭记忆手敲）。
-- 脚本优先：存在脚本能力时禁止裸 `git`；若脚本无覆盖，必须先申请人类明确同意（给出命令、风险、回退）。
-- 冲突硬门闩：检测到 `merge/rebase/cherry-pick` 冲突态时，agent 仅可输出诊断与处置建议；未经人类明确批准，禁止执行 `git * --continue/--abort`。
-- `.worktree-symbol` 仅作数据文件（KEY=VALUE，按首个 `=` 切分）；禁止 `source` / `eval` / dot-source / `Invoke-Expression`。
-- `.worktree-symbol` 与 `paradoc/` 默认不得进入 git history；worktree-only 输出需写入 `paradoc/Log.txt`。
+- **3.复用门闩（init --reuse）**
+  - 仅允许通过 `init --reuse` 复用。
+  - 必须携带 CLI 门闩：`--yes --i-am-maintainer`。
+  - 使用前必须先向人类发起审批请求（至少包含：目的、命令、风险、回退），并收到明确同意。
 
-## SPECS
-- 两套实现（同语义）：
+- **4.并发锁门闩**
+  - 若 `WORKTREE_LOCK_OWNER` 非当前 agent，必须拒绝并交由人类批准接管。
+
+- **5.合并门闩（merge）**
+  - merge 禁止自动执行；仅 maintainer 显式批准后可运行。
+  - 必须携带 CLI 门闩（`--yes --i-am-maintainer`），并自动触发 merge 前检查链。
+  - 使用前必须先向人类发起审批请求（至少包含：目的、命令、风险、回退），并收到明确同意。
+
+- **6.执行安全规则**
+  - 脚本优先：有脚本能力时禁止裸 `git`；若脚本无覆盖，必须先申请人类同意（命令、风险、回退）。
+  - 冲突硬门闩：检测到 `merge/rebase/cherry-pick` 冲突态时，仅可诊断与建议；未经人类明确批准，禁止执行相关git操作或继续前进。
+
+- **7.数据与审计规则**
+  - `.worktree-symbol` 仅作数据文件（KEY=VALUE，按首个 `=` 切分）；禁止 `source/eval/dot-source/Invoke-Expression`。
+  - `.worktree-symbol` 与 `paradoc/` 默认不得进入 git history；worktree-only 输出应写入 `paradoc/Log.txt`。
+
+## Execution Algorithm（执行算法）
+- **步骤 1：判定请求类型**
+  - `READ-ONLY`：解释/检索/审阅，可只读执行。
+  - `WRITE/SIDE-EFFECT`：改文件、`apply_patch`、会改变工作区或 git 状态的命令。
+
+- **步骤 2：WRITE/SIDE-EFFECT 固定顺序**
+  1. 先用 plan 工具写/更新执行计划（优先遵守人类给定 plan）。
+  2. 再按平台只打开一个路由文档（Bash 或 PowerShell），按文档命令执行，不凭记忆手敲。
+  3. 若命令包含 CLI 门闩（`--yes --i-am-maintainer`），先向人类提交审批请求并等待明确同意；未获同意不得执行。
+
+## Failure Output（失败输出约定）
+- **目录不确定**：先执行 `help --debug`；若仍不确定，停止并请求人类确认目标 repo/worktree。
+- **收到 WRITE/SIDE-EFFECT 请求但不在 worktree**：先 `init --new`，再 `do exec`，之后才开始改动。
+- **复用缺少 CLI 门闩或用户未明确复用**：直接 `FAIL`，输出可复制 `NEXT`（补 `--yes --i-am-maintainer`）。
+- **需要 CLI 门闩但尚未获得人类明确批准**：直接 `FAIL`，输出审批请求模板；禁止自行补门闩继续执行。
+- **锁冲突或旧命令请求**：直接 `FAIL`；输出 `LOCK_OWNER/AGENT_ID`，默认 `NEXT` 推荐 `init --new`；仅在人类明确批准时才执行接管复用。
+
+## Route Entry（路由入口）
+- **执行命令入口（仅二选一）**
+  - Bash：`references/route-bash.md`
+  - PowerShell：`references/route-powershell.md`
+
+- **补充参考（非执行入口）**
+  - `references/scripts.md`
+  - `references/plan.md`
+  - `references/regression-checklist.md`
+  - `references/wiki.md`
+
+## Specs（实现补充）
+- **实现映射（同语义双栈）**
   - Bash：`bash-scripts/parafork.sh`（入口）+ `bash-scripts/_lib.sh`（内部）
   - PowerShell：`powershell-scripts/parafork.ps1`（入口）+ `powershell-scripts/_lib.ps1`（内部）
-- merge 需要双门闩：本地批准（env/git config）+ CLI `--yes --i-am-maintainer`。
-- `custom.autoplan` 默认 `false`（见 `settings/config.toml`）：仅 `custom.autoplan=true` 或 `check --strict` 时机械要求 `paradoc/Plan.md`。
 
-## ROUTE
-- 设计/术语/硬约束 SSOT：`references/wiki.md`
-- 脚本清单与可运行范围：`references/scripts.md`
-- Plan 写作（仅 autoplan/strict 适用）：`references/plan.md`
-- 回归检查清单：`references/regression-checklist.md`
-- Windows PowerShell 执行路线（规划后再打开）：`references/route-powershell.md`
-- Bash 执行路线（规划后再打开）：`references/route-bash.md`
+- **`custom.autoplan` 默认值与触发条件**
+  - 默认 `false`（见 `settings/config.toml`）。
+  - 仅 `custom.autoplan=true` 或 `check --strict` 时机械要求 `paradoc/Plan.md`。
 
 ---------------------- Parafork SKILL.md截止符号 ----------------------
