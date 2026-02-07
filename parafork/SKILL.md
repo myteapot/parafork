@@ -8,7 +8,7 @@ description: "执行型 Core-Lite Git worktree skill（仅 help/init/do/check/me
 - 读取并使用本 skill，即默认接受本文件全部硬约束。本文件是必须遵守的任务协议，不是参考建议。任何修改都必须遵循本协议，不得绕开流程直接改仓库。
 
 ## Hard Gates（硬门闩）
-- **术语定义（仅此一处）**
+- **术语定义**
   - `SIDE-EFFECT（状态变更操作）`：任何会改变工作区、git 状态、worktree 元数据或审计状态的操作
   - 例如 `init --new/--reuse`、`do commit`、`merge`、`apply_patch`、写 `paradoc/Log.txt`）。
 
