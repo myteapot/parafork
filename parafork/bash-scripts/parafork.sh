@@ -25,7 +25,7 @@ trap 'fallback $?' EXIT
 
 cfg_str() { pf_toml_get_str "$CONFIG_PATH" "$1" "$2" "$3"; }
 cfg_bool() { pf_toml_get_bool "$CONFIG_PATH" "$1" "$2" "$3"; }
-base_branch() { cfg_str base branch main; }
+base_branch() { cfg_str base branch autodetect; }
 workdir_root() { cfg_str workdir root .parafork; }
 workdir_rule() { cfg_str workdir rule '{YYMMDD}-{HEX4}'; }
 autoplan() { cfg_bool custom autoplan false; }
@@ -63,6 +63,44 @@ list_wt_newest() {
   dir="$(wt_container "$base")"
   [[ -d "$dir" ]] || return 0
   while IFS= read -r d; do [[ -f "$d/.worktree-symbol" ]] && echo "$d"; done < <(ls -1dt "$dir"/* 2>/dev/null || true)
+}
+
+resolve_init_base_branch() {
+  local base="$1" configured current answer
+
+  configured="$(base_branch)"
+  current="$(git -C "$base" rev-parse --abbrev-ref HEAD 2>/dev/null | head -n1 | tr -d '\r\n')"
+
+  [[ -n "$current" ]] || pf_die "cannot detect current branch from base repo"
+
+  if [[ -z "$configured" || "$configured" == "autodetect" ]]; then
+    [[ "$current" != "HEAD" ]] || pf_die "autodetect requires a branch checkout (detached HEAD is not supported)"
+    printf '%s' "$current"
+    return 0
+  fi
+
+  if [[ "$configured" != "$current" ]]; then
+    if [[ "$current" == "HEAD" ]]; then
+      pf_warn "config base.branch=$configured differs from detached HEAD; keep configured branch"
+      printf '%s' "$configured"
+      return 0
+    fi
+
+    if [[ -t 0 ]]; then
+      printf 'WARN: config base.branch=%s differs from current branch=%s\n' "$configured" "$current" >&2
+      read -r -p "Use current branch '$current' for init --new? [Y/n]: " answer
+      case "$answer" in
+        ''|y|Y|yes|YES) printf '%s' "$current"; return 0 ;;
+        *) printf '%s' "$configured"; return 0 ;;
+      esac
+    fi
+
+    pf_warn "config base.branch=$configured differs from current branch=$current; non-interactive mode defaults to current branch"
+    printf '%s' "$current"
+    return 0
+  fi
+
+  printf '%s' "$configured"
 }
 
 guard_conflict() {
@@ -223,8 +261,7 @@ cmd_help() {
 cmd_init_new() {
   local base="$1" branch root rule ap id wr wb body
   [[ -f "$CONFIG_PATH" ]] || pf_die "missing config: $CONFIG_PATH"
-  branch="$(base_branch)"; root="$(workdir_root)"; rule="$(workdir_rule)"; ap="$(autoplan)"
-  git -C "$base" rev-parse --verify "$branch^{commit}" >/dev/null 2>&1 || pf_die "base branch not found: $branch"
+  branch="$(resolve_init_base_branch "$base")"; root="$(workdir_root)"; rule="$(workdir_rule)"; ap="$(autoplan)"
   mkdir -p "$base/$root"
   id="$(pf_expand_worktree_rule "$rule")"; wr="$base/$root/$id"; wb="parafork/$id"
   [[ ! -e "$wr" ]] || pf_die "worktree already exists: $wr"

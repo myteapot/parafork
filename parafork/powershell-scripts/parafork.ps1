@@ -26,7 +26,7 @@ function CfgBool {
   ParaforkTomlGetBool $script:ConfigPath $Section $Key $Default
 }
 
-function BaseBranch { CfgStr 'base' 'branch' 'main' }
+function BaseBranch { CfgStr 'base' 'branch' 'autodetect' }
 function WorkdirRoot { CfgStr 'workdir' 'root' '.parafork' }
 function WorkdirRule { CfgStr 'workdir' 'rule' '{YYMMDD}-{HEX4}' }
 function AutoplanEnabled { CfgBool 'custom' 'autoplan' 'false' }
@@ -88,6 +88,57 @@ function ExpandWorktreeRule {
   $yymmdd = (Get-Date).ToUniversalTime().ToString('yyMMdd')
   $hex4 = ([System.Guid]::NewGuid().ToString('N').Substring(0, 4)).ToUpperInvariant()
   return $Rule.Replace('{YYMMDD}', $yymmdd).Replace('{HEX4}', $hex4)
+}
+
+function ResolveInitBaseBranch {
+  param([string]$BaseRoot)
+
+  $configured = BaseBranch
+  $current = (& git -C $BaseRoot rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1)
+  if ($null -ne $current) { $current = $current.Trim() }
+
+  if ([string]::IsNullOrEmpty($current)) {
+    ParaforkDie 'cannot detect current branch from base repo'
+  }
+
+  if ([string]::IsNullOrEmpty($configured) -or $configured -eq 'autodetect') {
+    if ($current -eq 'HEAD') {
+      ParaforkDie 'autodetect requires a branch checkout (detached HEAD is not supported)'
+    }
+    return $current
+  }
+
+  if ($configured -ne $current) {
+    if ($current -eq 'HEAD') {
+      ParaforkWarn ("config base.branch={0} differs from detached HEAD; keep configured branch" -f $configured)
+      return $configured
+    }
+
+    $interactive = $false
+    try {
+      $interactive = -not [Console]::IsInputRedirected
+    } catch {
+      $interactive = $false
+    }
+
+    if (-not $interactive) {
+      ParaforkWarn ("config base.branch={0} differs from current branch={1}; non-interactive mode defaults to current branch" -f $configured, $current)
+      return $current
+    }
+
+    try {
+      $answer = Read-Host ("WARN: config base.branch={0} differs from current branch={1}. Use current branch for init --new? [Y/n]" -f $configured, $current)
+      if (-not [string]::IsNullOrWhiteSpace($answer) -and $answer.Trim() -notmatch '^(?i:y|yes)$') {
+        return $configured
+      }
+      return $current
+    } catch {
+      ParaforkWarn ("config base.branch={0} differs from current branch={1}; failed to read prompt, default to current branch" -f $configured, $current)
+      return $current
+    }
+  }
+
+  return $configured
 }
 
 function AppendUniqueLine {
@@ -410,15 +461,10 @@ function InitNewWorktree {
     ParaforkDie "missing config: $script:ConfigPath"
   }
 
-  $branch = BaseBranch
+  $branch = ResolveInitBaseBranch $BaseRoot
   $root = WorkdirRoot
   $rule = WorkdirRule
   $autoplan = AutoplanEnabled
-
-  & git -C $BaseRoot rev-parse --verify "$branch`^{commit}" 2>$null | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    ParaforkDie "base branch not found: $branch"
-  }
 
   $container = Join-Path $BaseRoot $root
   if (-not (Test-Path -LiteralPath $container)) {

@@ -1,5 +1,5 @@
 [base]
-branch = "main"
+branch = "autodetect" # autodetect=use current branch; explicit mismatch asks whether to switch to current
 
 [workdir]
 root = ".parafork"

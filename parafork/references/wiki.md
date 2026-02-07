@@ -67,7 +67,7 @@ NEXT=<copy/paste command>
 
 ```toml
 [base]
-branch = "main"
+branch = "autodetect"
 
 [workdir]
 root = ".parafork"
@@ -80,6 +80,9 @@ autoformat = true
 [control]
 squash = true
 ```
+
+- `base.branch = "autodetect"` 时，`init --new` 默认使用当前分支。
+- 当 `base.branch` 显式设置且与当前分支不一致时，脚本会询问是否改用当前分支（非交互模式默认改用当前分支）。
 
 ## 8. 验证入口
 - 发布包仅包含运行必需文件，不内置测试脚本/测试报告。

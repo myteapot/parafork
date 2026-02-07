@@ -21,6 +21,10 @@ description: "执行型 Core-Lite Git worktree skill（仅 help/init/do/check/me
   - `do` 仅允许：`exec|commit`；`check` 仅允许：`status|merge`。
   - `do exec` 仅允许参数：`--strict`。
 
+- **2.1) base 分支策略（init --new）**
+  - 默认：`base.branch=autodetect`，直接使用当前分支作为 `BASE_BRANCH`。
+  - 若 `base.branch` 为显式值且与当前分支不同：交互模式询问是否改用当前分支；非交互模式默认改用当前分支。
+
 - **3) 统一审批门闩（唯一规则）**
   - 凡命令包含 `--yes --i-am-maintainer`，执行前必须先获得人类明确批准。
   - 未获批准时必须 `FAIL`，禁止自行补门闩继续执行。
