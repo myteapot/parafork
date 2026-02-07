@@ -140,6 +140,72 @@
       .is-shining {
         animation: shineSweep 700ms ease-in-out;
       }
+
+      .flavor-map-board {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 18px;
+        padding: 12px;
+        background:
+          radial-gradient(460px 220px at 16% 16%, rgba(225, 157, 96, 0.3), transparent 62%),
+          radial-gradient(380px 220px at 84% 82%, rgba(184, 205, 197, 0.3), transparent 60%),
+          linear-gradient(160deg, rgba(14, 26, 22, 0.54), rgba(20, 39, 34, 0.86));
+      }
+
+      .flavor-map-svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .flavor-map-land {
+        fill: rgba(255, 255, 255, 0.08);
+      }
+
+      .flavor-map-outline {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.56);
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .flavor-map-region {
+        cursor: pointer;
+        stroke: rgba(255, 255, 255, 0.62);
+        stroke-width: 1.2;
+        stroke-linejoin: round;
+        transition: transform 180ms ease, fill 180ms ease, stroke 180ms ease;
+      }
+
+      .flavor-map-region:focus-visible {
+        outline: none;
+        stroke: rgba(255, 255, 255, 0.96);
+        stroke-width: 2.3;
+      }
+
+      .flavor-map-region.tone-a {
+        fill: rgba(237, 197, 154, 0.88);
+      }
+
+      .flavor-map-region.tone-b {
+        fill: rgba(184, 205, 197, 0.9);
+      }
+
+      .flavor-map-region.is-active {
+        fill: rgba(125, 226, 168, 0.95);
+        stroke: rgba(246, 243, 234, 0.98);
+        stroke-width: 2.4;
+        transform: translateY(-1px);
+        filter: drop-shadow(0 5px 10px rgba(20, 184, 106, 0.3));
+      }
+
+      .flavor-map-label {
+        fill: rgba(255, 255, 255, 0.78);
+        font-size: 10px;
+        font-weight: 600;
+        pointer-events: none;
+      }
+
       @media (prefers-reduced-motion: reduce) {
         .reveal {
           opacity: 1;
@@ -338,30 +404,126 @@
                       </div>
                     </div>
 
-                    <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">福建</div>
-                        <div class="mt-1 text-sm font-semibold">岩茶/白茶</div>
+                    <div class="mt-6 space-y-3">
+                      <div class="flavor-map-board">
+                        <svg class="flavor-map-svg" viewBox="0 0 420 230" role="img" aria-label="双色轮廓风味地图，可点击高亮产区">
+                          <path
+                            class="flavor-map-land"
+                            d="M72 48 L124 35 L176 40 L222 64 L250 102 L244 146 L208 178 L160 195 L118 190 L89 168 L74 132 L65 90 Z"
+                          />
+                          <path
+                            class="flavor-map-land"
+                            d="M278 88 L317 80 L351 91 L366 114 L363 141 L344 156 L311 162 L284 151 L272 127 Z"
+                          />
+                          <path class="flavor-map-land" d="M332 183 L343 179 L352 187 L348 199 L336 202 L329 194 Z" />
+
+                          <path
+                            class="flavor-map-region tone-a"
+                            data-map-region="Yunnan"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选云南产区"
+                            d="M96 122 L115 111 L136 114 L147 128 L138 146 L113 152 L95 141 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-b"
+                            data-map-region="Zhejiang"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选浙江产区"
+                            d="M182 109 L201 101 L215 108 L214 124 L197 133 L181 126 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-a"
+                            data-map-region="Fujian"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选福建产区"
+                            d="M184 132 L201 125 L214 132 L214 148 L199 157 L185 149 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-b"
+                            data-map-region="Taiwan"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选台湾产区"
+                            d="M230 141 L238 136 L246 142 L246 158 L239 166 L231 162 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-b"
+                            data-map-region="Assam"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选印度阿萨姆产区"
+                            d="M335 101 L349 104 L355 115 L351 128 L338 131 L327 124 L327 110 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-a"
+                            data-map-region="SriLanka"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选斯里兰卡产区"
+                            d="M337 186 L345 185 L349 193 L345 199 L337 199 L333 193 Z"
+                          />
+
+                          <path class="flavor-map-outline" d="M72 48 L124 35 L176 40 L222 64 L250 102 L244 146 L208 178 L160 195 L118 190 L89 168 L74 132 L65 90 Z" />
+                          <path class="flavor-map-outline" d="M278 88 L317 80 L351 91 L366 114 L363 141 L344 156 L311 162 L284 151 L272 127 Z" />
+                          <path class="flavor-map-outline" d="M332 183 L343 179 L352 187 L348 199 L336 202 L329 194 Z" />
+
+                          <text class="flavor-map-label" x="96" y="166">中国茶区</text>
+                          <text class="flavor-map-label" x="282" y="175">南亚茶区</text>
+                        </svg>
                       </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">云南</div>
-                        <div class="mt-1 text-sm font-semibold">普洱/滇红</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">浙江</div>
-                        <div class="mt-1 text-sm font-semibold">绿茶</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">台湾</div>
-                        <div class="mt-1 text-sm font-semibold">乌龙</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">斯里兰卡</div>
-                        <div class="mt-1 text-sm font-semibold">红茶</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">印度</div>
-                        <div class="mt-1 text-sm font-semibold">阿萨姆</div>
+
+                      <div class="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-map-chip="Fujian"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          福建
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Yunnan"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          云南
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Zhejiang"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          浙江
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Taiwan"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          台湾
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="SriLanka"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          斯里兰卡
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Assam"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          印度·阿萨姆
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1443,6 +1605,7 @@
         function setRegion(next) {
           state.region = next;
           syncChips();
+          syncFlavorMap();
           syncProducts();
         }
 
@@ -1466,6 +1629,28 @@
             btn.classList.toggle("border-ink-900/10", !active);
             btn.classList.toggle("bg-white/70", !active);
             btn.classList.toggle("text-ink-900/70", !active);
+          });
+        }
+
+        function syncFlavorMap() {
+          document.querySelectorAll("[data-map-region]").forEach((el) => {
+            const key = el.getAttribute("data-map-region");
+            const active = key && state.region === key;
+            el.classList.toggle("is-active", active);
+            el.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+
+          document.querySelectorAll("[data-map-chip]").forEach((btn) => {
+            const key = btn.getAttribute("data-map-chip");
+            const active = key && state.region === key;
+            btn.setAttribute("aria-pressed", active ? "true" : "false");
+            btn.classList.toggle("bg-white", active);
+            btn.classList.toggle("text-ink-900", active);
+            btn.classList.toggle("border-white", active);
+            btn.classList.toggle("shadow-sm", active);
+            btn.classList.toggle("bg-white/10", !active);
+            btn.classList.toggle("text-white/80", !active);
+            btn.classList.toggle("border-white/20", !active);
           });
         }
 
@@ -1618,6 +1803,7 @@
             state.q = "";
             $("#searchInput").value = "";
             syncChips();
+            syncFlavorMap();
             syncProducts();
           });
 
@@ -1631,6 +1817,31 @@
           document.querySelectorAll("#regions [data-region]").forEach((btn) => {
             btn.addEventListener("click", () => {
               const key = btn.getAttribute("data-region");
+              setRegion(state.region === key ? null : key);
+              document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+            });
+          });
+
+          document.querySelectorAll("[data-map-region]").forEach((el) => {
+            const key = el.getAttribute("data-map-region");
+            if (!key) return;
+
+            const toggleRegion = () => {
+              setRegion(state.region === key ? null : key);
+              document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+            };
+
+            el.addEventListener("click", toggleRegion);
+            el.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              toggleRegion();
+            });
+          });
+
+          document.querySelectorAll("[data-map-chip]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const key = btn.getAttribute("data-map-chip");
               setRegion(state.region === key ? null : key);
               document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
             });
@@ -1726,6 +1937,7 @@
         loadCart();
         bindTopInteractions();
         syncChips();
+        syncFlavorMap();
         syncProducts();
         renderCart();
         kickReveal();
