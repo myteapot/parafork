@@ -1,19 +1,15 @@
-### Parafork
-一个基于Git worktree的会话隔离Skill，用于多窗口并行开发，使每个窗口专注于单一任务，提高工作效率并减轻agent心智负担
-##### Structure：
+### Repo structure：
 - Parafork [Skill文件夹]
 - Examples [用于存储教程中的示例网页]
 
-##### compatibility:
-支持在windows/linux/wsl下使用
 
-##### how to install：
+#### Parafork
+一个基于Git worktree的会话隔离Skill，用于多窗口并行开发，使每个窗口专注于单一任务，提高工作效率并减轻agent心智负担
+
+##### How to install：
 复制parafork文件夹添加到skills文件夹即可
 
-##### how to use：
-教程（准备中）
-
-##### flowchart：
+##### Flowchart：
 ```mermaid
 flowchart LR
     subgraph S1[启动]
@@ -36,3 +32,11 @@ flowchart LR
     C -->|锁冲突| B
 
 ```
+
+##### Compatibility:
+支持在windows/linux/wsl下使用
+
+
+##### How to use：
+教程（准备中）
+
