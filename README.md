@@ -1,24 +1,32 @@
-parafork是一个基于git worktree的并行多会话开发skill
-支持在windows/linux/wsl下使用
+### Parafork是一个基于git worktree的并行多会话开发skill
+##### 支持在windows/linux/wsl下使用
 
-how to install：
+##### how to install：
 复制parafork文件夹添加到skills文件夹即可
 
-流程图简述：
+##### how to use：
+教程（准备中）
+
+##### 流程图示例：
 ```mermaid
-flowchart TD
-    A[Run parafork] --> B{Inside worktree?}
-    B -->|No| C[init --new]
-    B -->|Yes| D[do exec]
+flowchart LR
+    subgraph S1[启动]
+        A[Parafork] --> B[init --new]
+    end
 
-    C --> E[Create worktree]
-    E --> D
+    subgraph S2[开发循环]
+        C[do exec] --> D[do commit]
+        D --> C
+    end
 
-    D --> F[Edit code]
-    F --> G[do commit]
-    G --> H[check merge]
-    H --> I{Ready + approved?}
-    I -->|Yes| J[merge]
-    I -->|No| F
+    subgraph S3[交付]
+        E[check merge] --> F{通过 + 人类批准?}
+        F -->|Yes| G[merge]
+    end
+
+    B --> C
+    D --> E
+    F -->|No| C
+    C -->|锁冲突| B
 
 ```
