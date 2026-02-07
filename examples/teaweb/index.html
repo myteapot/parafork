@@ -1,0 +1,2190 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>山河茶集 | 不同产区的好茶</title>
+    <meta
+      name="description"
+      content="精选不同地区产区好茶：福建岩茶、云南普洱、浙江绿茶、台湾乌龙等。支持按产区筛选、加入购物车、查看风味与冲泡建议。"
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ["Fraunces", "ui-serif", "Georgia", "serif"],
+              body: [
+                "IBM Plex Sans",
+                "ui-sans-serif",
+                "system-ui",
+                "Segoe UI",
+                "Arial",
+                "sans-serif",
+              ],
+            },
+            colors: {
+              ink: {
+                900: "#0e1a16",
+                800: "#142722",
+                700: "#1e3a31",
+              },
+              tea: {
+                50: "#f2fbf5",
+                100: "#e3f7ea",
+                200: "#baf0ce",
+                300: "#7de2a8",
+                400: "#2ecf7f",
+                500: "#14b86a",
+                600: "#0f9154",
+                700: "#0f7245",
+              },
+              clay: {
+                50: "#fbf3ea",
+                100: "#f6e3cd",
+                200: "#edc59a",
+                300: "#e19d60",
+                400: "#d57b37",
+                500: "#c56224",
+                600: "#9f4a1a",
+                700: "#7a3615",
+              },
+              mist: {
+                50: "#f7faf9",
+                100: "#eef4f2",
+                200: "#dbe7e3",
+                300: "#b8cdc5",
+                400: "#88a79e",
+                500: "#5f7f76",
+              },
+            },
+            boxShadow: {
+              soft: "0 18px 40px rgba(14,26,22,.14)",
+              lift: "0 16px 34px rgba(14,26,22,.16)",
+            },
+            keyframes: {
+              floaty: {
+                "0%, 100%": { transform: "translate3d(0,0,0)" },
+                "50%": { transform: "translate3d(0,-10px,0)" },
+              },
+              shine: {
+                "0%": { transform: "translateX(-60%)" },
+                "100%": { transform: "translateX(160%)" },
+              },
+            },
+            animation: {
+              floaty: "floaty 9s ease-in-out infinite",
+              shine: "shine 1.4s ease-in-out",
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      :root {
+        --paper: #f6f3ea;
+        --paper-2: #f0efe8;
+        --grain: rgba(14, 26, 22, 0.06);
+      }
+      body {
+        background:
+          radial-gradient(1200px 700px at 18% 10%, rgba(125, 226, 168, 0.22), transparent 60%),
+          radial-gradient(900px 560px at 86% 20%, rgba(237, 197, 154, 0.28), transparent 58%),
+          radial-gradient(900px 560px at 70% 92%, rgba(184, 205, 197, 0.28), transparent 55%),
+          linear-gradient(180deg, var(--paper), var(--paper-2));
+      }
+      .grain {
+        position: relative;
+      }
+      .grain::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.9;
+        background-image:
+          radial-gradient(circle at 1px 1px, var(--grain) 1px, transparent 0);
+        background-size: 18px 18px;
+        mix-blend-mode: multiply;
+        mask-image: linear-gradient(180deg, transparent, black 18%, black 82%, transparent);
+      }
+      .reveal {
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 700ms ease, transform 700ms ease;
+      }
+      .reveal.is-in {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @keyframes shineSweep {
+        0% {
+          transform: translateX(-60%);
+        }
+        100% {
+          transform: translateX(160%);
+        }
+      }
+      .is-shining {
+        animation: shineSweep 700ms ease-in-out;
+      }
+      .hero-slide {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        transform: scale(1.04);
+        transition: opacity 520ms ease, transform 520ms ease;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: cover;
+      }
+      .hero-slide.is-active {
+        opacity: 1;
+        transform: scale(1);
+      }
+      .hero-slide-pixel {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      .hero-dot {
+        height: 10px;
+        width: 10px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.36);
+        transition: transform 220ms ease, background-color 220ms ease;
+      }
+      .hero-dot.is-active {
+        transform: scale(1.14);
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      .flavor-map-board {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 18px;
+        padding: 12px;
+        background:
+          radial-gradient(460px 220px at 16% 16%, rgba(225, 157, 96, 0.3), transparent 62%),
+          radial-gradient(380px 220px at 84% 82%, rgba(184, 205, 197, 0.3), transparent 60%),
+          linear-gradient(160deg, rgba(14, 26, 22, 0.54), rgba(20, 39, 34, 0.86));
+      }
+
+      .flavor-map-svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .flavor-map-land {
+        fill: rgba(255, 255, 255, 0.08);
+      }
+
+      .flavor-map-outline {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.56);
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .flavor-map-region {
+        cursor: pointer;
+        stroke: rgba(255, 255, 255, 0.62);
+        stroke-width: 1.2;
+        stroke-linejoin: round;
+        transition: transform 180ms ease, fill 180ms ease, stroke 180ms ease;
+      }
+
+      .flavor-map-region:focus-visible {
+        outline: none;
+        stroke: rgba(255, 255, 255, 0.96);
+        stroke-width: 2.3;
+      }
+
+      .flavor-map-region.tone-a {
+        fill: rgba(237, 197, 154, 0.88);
+      }
+
+      .flavor-map-region.tone-b {
+        fill: rgba(184, 205, 197, 0.9);
+      }
+
+      .flavor-map-region.is-active {
+        fill: rgba(125, 226, 168, 0.95);
+        stroke: rgba(246, 243, 234, 0.98);
+        stroke-width: 2.4;
+        transform: translateY(-1px);
+        filter: drop-shadow(0 5px 10px rgba(20, 184, 106, 0.3));
+      }
+
+      .flavor-map-label {
+        fill: rgba(255, 255, 255, 0.78);
+        font-size: 10px;
+        font-weight: 600;
+        pointer-events: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .reveal {
+          opacity: 1;
+          transform: none;
+          transition: none;
+        }
+        .reduce-motion {
+          animation: none !important;
+          transition: none !important;
+        }
+        .hero-slide {
+          transition: none;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body class="font-body text-ink-900 antialiased">
+    <a
+      class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:text-ink-900 focus:shadow-soft"
+      href="#content"
+    >
+      跳到主要内容
+    </a>
+
+    <!-- Top nav -->
+    <header class="sticky top-0 z-50 border-b border-ink-900/10 bg-white/60 backdrop-blur-xl">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="grid h-10 w-10 place-items-center rounded-2xl bg-ink-900 text-white shadow-soft"
+            aria-hidden="true"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6.5 13.2c1.8-2 3.5-3.4 6-4.5 1.9-.8 3.6-1.1 5-1.2-.2 2-1.1 4.6-2.8 6.6-2 2.3-4.6 3.9-7.8 4.2-1.4.1-2.7-.1-3.9-.5 0-1.3.4-2.9 1.5-4.6Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M8 20.5c.8-4.6 3.2-7.7 8.2-10.4"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <div>
+            <div class="font-display text-lg leading-none">山河茶集</div>
+            <div class="text-xs text-ink-900/60">按产区选茶 · 风味可追溯</div>
+          </div>
+        </div>
+
+        <nav class="hidden items-center gap-6 text-sm text-ink-900/80 md:flex">
+          <a class="hover:text-ink-900" href="#regions">产区</a>
+          <a class="hover:text-ink-900" href="#products">好茶</a>
+          <a class="hover:text-ink-900" href="#brew">冲泡</a>
+          <a class="hover:text-ink-900" href="#story">关于</a>
+        </nav>
+
+        <div class="flex items-center gap-2">
+          <button
+            id="openCart"
+            class="group relative inline-flex items-center gap-2 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-sm shadow-sm transition hover:bg-white"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="cartDrawer"
+          >
+            <span class="inline-flex h-2 w-2 rounded-full bg-tea-500 shadow-[0_0_0_4px_rgba(20,184,106,.18)]"></span>
+            <span>购物车</span>
+            <span
+              id="cartCount"
+              class="ml-1 rounded-full bg-ink-900 px-2 py-0.5 text-xs text-white"
+            >
+              0
+            </span>
+            <span
+              class="pointer-events-none absolute -inset-1 rounded-2xl opacity-0 ring-2 ring-tea-300 transition group-focus-visible:opacity-100"
+              aria-hidden="true"
+            ></span>
+          </button>
+
+          <button
+            id="openMenu"
+            class="inline-flex items-center justify-center rounded-2xl border border-ink-900/10 bg-white/70 p-2 text-ink-900/80 shadow-sm transition hover:bg-white md:hidden"
+            type="button"
+            aria-label="打开菜单"
+            aria-haspopup="dialog"
+            aria-controls="mobileMenu"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5 7h14M5 12h14M5 17h14"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <main id="content" class="grain">
+      <section class="relative overflow-hidden">
+        <div class="mx-auto max-w-6xl px-4 pb-10 pt-10 sm:px-6 sm:pb-14 sm:pt-14">
+          <div class="grid items-center gap-10 lg:grid-cols-12">
+            <div class="lg:col-span-6">
+              <div
+                class="inline-flex items-center gap-2 rounded-full border border-ink-900/10 bg-white/70 px-3 py-1 text-xs text-ink-900/70 shadow-sm"
+              >
+                <span class="h-1.5 w-1.5 rounded-full bg-clay-500"></span>
+                <span>本周上新：云南临沧古树熟普</span>
+              </div>
+              <h1 class="mt-4 font-display text-4xl leading-[1.05] tracking-tight text-ink-900 sm:text-5xl">
+                从山到杯，
+                <span class="text-ink-900/70">把产区风味喝出来</span>
+              </h1>
+              <p class="mt-4 max-w-xl text-base leading-relaxed text-ink-900/70">
+                我们把不同地区的茶做成一张“风味地图”。按产区筛选、看工艺、读风味，再用一套清晰的冲泡建议，把每一泡喝得更准。
+              </p>
+
+              <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <a
+                  class="relative inline-flex items-center justify-center rounded-2xl bg-ink-900 px-5 py-3 text-sm font-semibold text-white shadow-lift transition hover:-translate-y-0.5 hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  href="#products"
+                >
+                  去选茶
+                  <span
+                    class="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl"
+                    aria-hidden="true"
+                  >
+                    <span
+                      class="absolute -left-1/2 top-0 h-full w-1/3 -skew-x-12 bg-white/20 opacity-0"
+                      data-shine
+                    ></span>
+                  </span>
+                </a>
+                <a
+                  class="inline-flex items-center justify-center rounded-2xl border border-ink-900/15 bg-white/70 px-5 py-3 text-sm font-semibold text-ink-900 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  href="#regions"
+                >
+                  先看产区
+                </a>
+                <div class="text-xs text-ink-900/60">
+                  满 199 包邮 · 7 天无忧退换
+                </div>
+              </div>
+
+              <div class="mt-8 grid grid-cols-3 gap-3 max-w-xl">
+                <div class="rounded-2xl border border-ink-900/10 bg-white/60 p-3 shadow-sm">
+                  <div class="text-xs text-ink-900/60">精选批次</div>
+                  <div class="mt-1 font-semibold">每季小量上架</div>
+                </div>
+                <div class="rounded-2xl border border-ink-900/10 bg-white/60 p-3 shadow-sm">
+                  <div class="text-xs text-ink-900/60">风味标签</div>
+                  <div class="mt-1 font-semibold">一眼读懂</div>
+                </div>
+                <div class="rounded-2xl border border-ink-900/10 bg-white/60 p-3 shadow-sm">
+                  <div class="text-xs text-ink-900/60">冲泡建议</div>
+                  <div class="mt-1 font-semibold">按器具给配方</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lg:col-span-6">
+              <div class="relative">
+                <div
+                  class="reduce-motion absolute -left-10 -top-10 h-24 w-24 rounded-[30px] bg-tea-200/70 blur-[1px] shadow-soft animate-floaty"
+                  aria-hidden="true"
+                ></div>
+                <div
+                  class="reduce-motion absolute -right-10 top-10 h-28 w-28 rounded-[34px] bg-clay-200/80 blur-[1px] shadow-soft animate-floaty"
+                  style="animation-delay: -2.2s"
+                  aria-hidden="true"
+                ></div>
+
+                <div class="rounded-[28px] border border-ink-900/10 bg-white/60 p-4 shadow-soft backdrop-blur">
+                  <div class="rounded-[22px] bg-gradient-to-br from-ink-900 via-ink-800 to-ink-700 p-5 text-white">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <div class="text-xs text-white/70">轮换头图 / Hero Rotator</div>
+                        <div class="mt-2 font-display text-2xl leading-tight">
+                          像素艺术头图
+                        </div>
+                        <p class="mt-2 max-w-sm text-sm leading-relaxed text-white/80">
+                          默认轮换 3 张像素艺术头图。上传后会自动加入轮换队列，可继续随时替换。
+                        </p>
+                      </div>
+                      <label
+                        class="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus-within:ring-2 focus-within:ring-tea-300"
+                      >
+                        上传头图
+                        <input id="heroUploadInput" class="sr-only" type="file" accept="image/*" />
+                      </label>
+                    </div>
+
+                    <div
+                      id="heroCarousel"
+                      class="group relative mt-5 aspect-[4/3] overflow-hidden rounded-2xl border border-white/20 bg-ink-900/35 sm:aspect-[16/10]"
+                      aria-live="polite"
+                    >
+                      <div id="heroSlides" class="absolute inset-0"></div>
+                      <div
+                        class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
+                        aria-hidden="true"
+                      ></div>
+                      <div class="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
+                        <div class="max-w-[72%]">
+                          <div class="text-[11px] uppercase tracking-[0.16em] text-white/70">当前头图</div>
+                          <div id="heroSlideMeta" class="mt-1 text-sm font-semibold">像素头图已就绪</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <button
+                            id="heroPrev"
+                            class="rounded-xl border border-white/25 bg-black/35 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                            type="button"
+                            aria-label="上一张头图"
+                          >
+                            上一张
+                          </button>
+                          <button
+                            id="heroNext"
+                            class="rounded-xl border border-white/25 bg-black/35 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                            type="button"
+                            aria-label="下一张头图"
+                          >
+                            下一张
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <div id="heroDots" class="flex items-center gap-1.5" aria-label="头图切换"></div>
+                      <div id="heroUploadHint" class="text-xs text-white/70">默认像素艺术头图 3 张</div>
+                    </div>
+
+                    <div class="mt-6 space-y-3">
+                      <div class="flavor-map-board">
+                        <svg class="flavor-map-svg" viewBox="0 0 420 230" role="img" aria-label="双色轮廓风味地图，可点击高亮产区">
+                          <path
+                            class="flavor-map-land"
+                            d="M72 48 L124 35 L176 40 L222 64 L250 102 L244 146 L208 178 L160 195 L118 190 L89 168 L74 132 L65 90 Z"
+                          />
+                          <path
+                            class="flavor-map-land"
+                            d="M278 88 L317 80 L351 91 L366 114 L363 141 L344 156 L311 162 L284 151 L272 127 Z"
+                          />
+                          <path class="flavor-map-land" d="M332 183 L343 179 L352 187 L348 199 L336 202 L329 194 Z" />
+
+                          <path
+                            class="flavor-map-region tone-a"
+                            data-map-region="Yunnan"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选云南产区"
+                            d="M96 122 L115 111 L136 114 L147 128 L138 146 L113 152 L95 141 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-b"
+                            data-map-region="Zhejiang"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选浙江产区"
+                            d="M182 109 L201 101 L215 108 L214 124 L197 133 L181 126 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-a"
+                            data-map-region="Fujian"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选福建产区"
+                            d="M184 132 L201 125 L214 132 L214 148 L199 157 L185 149 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-b"
+                            data-map-region="Taiwan"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选台湾产区"
+                            d="M230 141 L238 136 L246 142 L246 158 L239 166 L231 162 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-b"
+                            data-map-region="Assam"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选印度阿萨姆产区"
+                            d="M335 101 L349 104 L355 115 L351 128 L338 131 L327 124 L327 110 Z"
+                          />
+                          <path
+                            class="flavor-map-region tone-a"
+                            data-map-region="SriLanka"
+                            tabindex="0"
+                            role="button"
+                            aria-label="筛选斯里兰卡产区"
+                            d="M337 186 L345 185 L349 193 L345 199 L337 199 L333 193 Z"
+                          />
+
+                          <path class="flavor-map-outline" d="M72 48 L124 35 L176 40 L222 64 L250 102 L244 146 L208 178 L160 195 L118 190 L89 168 L74 132 L65 90 Z" />
+                          <path class="flavor-map-outline" d="M278 88 L317 80 L351 91 L366 114 L363 141 L344 156 L311 162 L284 151 L272 127 Z" />
+                          <path class="flavor-map-outline" d="M332 183 L343 179 L352 187 L348 199 L336 202 L329 194 Z" />
+
+                          <text class="flavor-map-label" x="96" y="166">中国茶区</text>
+                          <text class="flavor-map-label" x="282" y="175">南亚茶区</text>
+                        </svg>
+                      </div>
+
+                      <div class="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-map-chip="Fujian"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          福建
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Yunnan"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          云南
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Zhejiang"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          浙江
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Taiwan"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          台湾
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="SriLanka"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          斯里兰卡
+                        </button>
+                        <button
+                          type="button"
+                          data-map-chip="Assam"
+                          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/20"
+                          aria-pressed="false"
+                        >
+                          印度·阿萨姆
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-4 md:grid-cols-2">
+                    <div class="rounded-[22px] border border-ink-900/10 bg-white/70 p-5">
+                      <div class="flex items-center justify-between">
+                        <div class="text-sm font-semibold">本月热销</div>
+                        <div class="text-xs text-ink-900/60">按人气排序</div>
+                      </div>
+                      <div class="mt-3 space-y-2 text-sm">
+                        <div class="flex items-center justify-between">
+                          <div class="text-ink-900/80">福建 · 武夷肉桂</div>
+                          <div class="font-semibold">¥ 68</div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <div class="text-ink-900/80">云南 · 临沧熟普</div>
+                          <div class="font-semibold">¥ 88</div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <div class="text-ink-900/80">浙江 · 明前龙井</div>
+                          <div class="font-semibold">¥ 98</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="rounded-[22px] border border-ink-900/10 bg-white/70 p-5">
+                      <div class="text-sm font-semibold">冲泡小抄</div>
+                      <p class="mt-2 text-sm leading-relaxed text-ink-900/70">
+                        盖碗 110ml：岩茶 8g，沸水，前 3 泡 8s/10s/12s；普洱 6g，沸水，前 3 泡 10s/12s/15s。
+                      </p>
+                      <a
+                        class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-ink-900 hover:underline"
+                        href="#brew"
+                      >
+                        查看更多配方
+                        <span aria-hidden="true">→</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Regions -->
+      <section id="regions" class="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <div class="reveal">
+          <div class="flex items-end justify-between gap-6">
+            <div>
+              <h2 class="font-display text-2xl tracking-tight sm:text-3xl">产区风味</h2>
+              <p class="mt-2 max-w-2xl text-sm leading-relaxed text-ink-900/70">
+                不同地区的海拔、土壤与制茶工艺，会把香气、甜度与口感塑形。点选产区，立刻筛选商品。
+              </p>
+            </div>
+            <div class="hidden sm:block text-xs text-ink-900/60">小提示：再次点击可取消筛选</div>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <button
+            class="reveal group rounded-[26px] border border-ink-900/10 bg-white/60 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            type="button"
+            data-region="Fujian"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-ink-900/60">福建</div>
+                <div class="mt-1 font-semibold">岩茶 / 白茶</div>
+                <div class="mt-2 text-sm text-ink-900/70">焙火香、花果香，层次分明</div>
+              </div>
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-clay-100 text-clay-700">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M6 12c2.5-3.1 6.1-5.3 12-6-1 6.4-5.4 11.1-12 12 0-1.9.5-4 0-6Z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">桂皮香</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">岩韵</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">耐泡</span>
+            </div>
+          </button>
+
+          <button
+            class="reveal group rounded-[26px] border border-ink-900/10 bg-white/60 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            type="button"
+            data-region="Yunnan"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-ink-900/60">云南</div>
+                <div class="mt-1 font-semibold">普洱 / 滇红</div>
+                <div class="mt-2 text-sm text-ink-900/70">醇厚回甘，木质与蜜香</div>
+              </div>
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-tea-100 text-tea-700">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M4.5 14.5c1.3-2.2 3.2-3.9 5.7-5.2 2.5-1.2 5.3-1.9 8.3-2.1-.4 2.8-1.5 5.4-3.4 7.6-2.4 2.9-5.7 4.2-9.6 4.1-.6-1.5-.8-3.1-1-4.4Z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">糯甜</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">醇滑</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">陈香</span>
+            </div>
+          </button>
+
+          <button
+            class="reveal group rounded-[26px] border border-ink-900/10 bg-white/60 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            type="button"
+            data-region="Zhejiang"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-ink-900/60">浙江</div>
+                <div class="mt-1 font-semibold">绿茶</div>
+                <div class="mt-2 text-sm text-ink-900/70">鲜爽清甜，豆香与兰香</div>
+              </div>
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-mist-100 text-mist-500">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M6 16c4-1.2 7-4.8 8-10 2.6 3.4 3.7 7.4 2 11-1.6 3.5-5.8 5.4-10 4 0-1.5 0-3.2 0-5Z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">鲜爽</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">清甜</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">嫩香</span>
+            </div>
+          </button>
+
+          <button
+            class="reveal group rounded-[26px] border border-ink-900/10 bg-white/60 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            type="button"
+            data-region="Taiwan"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-ink-900/60">台湾</div>
+                <div class="mt-1 font-semibold">乌龙</div>
+                <div class="mt-2 text-sm text-ink-900/70">花香高扬，汤感细腻</div>
+              </div>
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-clay-100 text-clay-700">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M7 15c4.3-2 6.8-5.6 7.6-10.2 2.8 3.2 4.1 7 2.8 10.7-1.5 4.4-6.3 6.9-10.4 6.5 0-2.3-.2-4.4 0-7Z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">兰花香</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">奶香</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">甘润</span>
+            </div>
+          </button>
+
+          <button
+            class="reveal group rounded-[26px] border border-ink-900/10 bg-white/60 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            type="button"
+            data-region="SriLanka"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-ink-900/60">斯里兰卡</div>
+                <div class="mt-1 font-semibold">红茶</div>
+                <div class="mt-2 text-sm text-ink-900/70">清亮果香，适合冷泡</div>
+              </div>
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-mist-100 text-mist-500">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M7 8h10M8.5 21h7c.5 0 .9-.4.9-.9v-1.4c0-.3-.1-.5-.3-.7l-1.2-1.2V9.3c0-.7-.6-1.3-1.3-1.3h-3.2c-.7 0-1.3.6-1.3 1.3v7.5l-1.2 1.2c-.2.2-.3.4-.3.7v1.4c0 .5.4.9.9.9Z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">柑橘</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">清甜</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">冷泡</span>
+            </div>
+          </button>
+
+          <button
+            class="reveal group rounded-[26px] border border-ink-900/10 bg-white/60 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            type="button"
+            data-region="Assam"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-ink-900/60">印度</div>
+                <div class="mt-1 font-semibold">阿萨姆红茶</div>
+                <div class="mt-2 text-sm text-ink-900/70">麦芽香浓郁，奶茶友好</div>
+              </div>
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-tea-100 text-tea-700">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M7 8h9.5c1.9 0 3.5 1.6 3.5 3.5S18.4 15 16.5 15H15"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="M6.5 8h8.2c.6 0 1.1.5 1 1.1l-.7 9c0 .5-.5.9-1 .9H8.2c-.5 0-1-.4-1-.9l-.7-9C6.4 8.5 5.9 8 5.3 8H4.5"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">麦芽</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">浓强</span>
+              <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">奶茶</span>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <!-- Products -->
+      <section id="products" class="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <div class="reveal flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="font-display text-2xl tracking-tight sm:text-3xl">好茶上架</h2>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-ink-900/70">
+              每款茶都带产区、工艺与风味标签。你也可以先按“口感”挑，再回头确认产区。
+            </p>
+          </div>
+          <div class="flex flex-col gap-3 sm:items-end">
+            <div class="flex flex-wrap gap-2" id="regionChips" aria-label="产区筛选">
+              <button
+                type="button"
+                class="rounded-full border border-ink-900/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-ink-900/70 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                data-chip="Fujian"
+                aria-pressed="false"
+              >
+                福建
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-ink-900/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-ink-900/70 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                data-chip="Yunnan"
+                aria-pressed="false"
+              >
+                云南
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-ink-900/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-ink-900/70 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                data-chip="Zhejiang"
+                aria-pressed="false"
+              >
+                浙江
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-ink-900/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-ink-900/70 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                data-chip="Taiwan"
+                aria-pressed="false"
+              >
+                台湾
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-ink-900/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-ink-900/70 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                data-chip="SriLanka"
+                aria-pressed="false"
+              >
+                斯里兰卡
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-ink-900/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-ink-900/70 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                data-chip="Assam"
+                aria-pressed="false"
+              >
+                印度·阿萨姆
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="sr-only" for="searchInput">搜索茶名</label>
+              <input
+                id="searchInput"
+                class="w-full max-w-[280px] rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2 text-sm outline-none placeholder:text-ink-900/40 focus:ring-2 focus:ring-tea-300"
+                placeholder="搜索：龙井 / 岩茶 / 普洱…"
+                type="search"
+              />
+              <button
+                id="clearFilters"
+                class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                type="button"
+              >
+                清空
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" id="productGrid" aria-live="polite">
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="fj-rougui"
+            data-region="Fujian"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-clay-100 via-white to-mist-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">福建 · 乌龙·岩茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">武夷肉桂</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">香气辛甜，汤感饱满，回甘利落。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">50g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 68</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">桂皮香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">焙火</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">岩韵</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="fj-rougui"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="fj-rougui"
+                  aria-label="查看 武夷肉桂 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="fj-baimudan"
+            data-region="Fujian"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-clay-100 via-white to-mist-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">福建 · 白茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">白牡丹</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">花香清雅，入口甘润，适合日常。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">50g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 58</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">花香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">清甜</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">柔润</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="fj-baimudan"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="fj-baimudan"
+                  aria-label="查看 白牡丹 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="yn-lincang-shu"
+            data-region="Yunnan"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-tea-100 via-white to-clay-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">云南 · 普洱·熟茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">临沧古树熟普</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">汤感厚而不闷，甜度稳定，耐泡。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">100g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 88</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">醇滑</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">糯甜</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">陈香</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="yn-lincang-shu"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="yn-lincang-shu"
+                  aria-label="查看 临沧古树熟普 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="yn-dianhong"
+            data-region="Yunnan"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-tea-100 via-white to-clay-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">云南 · 红茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">凤庆滇红</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">蜜香明显，适合秋冬，亦可加奶。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">60g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 62</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">蜜香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">红薯甜</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">暖意</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="yn-dianhong"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="yn-dianhong"
+                  aria-label="查看 凤庆滇红 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="zj-longjing"
+            data-region="Zhejiang"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-mist-100 via-white to-tea-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">浙江 · 绿茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">明前龙井</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">鲜爽度高，豆香显，尾段回甘清晰。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">50g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 98</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">豆香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">鲜爽</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">清甜</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="zj-longjing"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="zj-longjing"
+                  aria-label="查看 明前龙井 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="tw-gaoshan"
+            data-region="Taiwan"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-clay-50 via-white to-tea-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">台湾 · 乌龙</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">高山乌龙</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">花香高扬，汤水细，冷泡也出彩。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">50g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 92</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">兰花香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">奶香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">甘润</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="tw-gaoshan"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="tw-gaoshan"
+                  aria-label="查看 高山乌龙 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="slk-ceylon"
+            data-region="SriLanka"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-mist-50 via-white to-clay-50 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">斯里兰卡 · 红茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">锡兰柑橘红茶</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">果香干净，适合做冰红茶或冷泡。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">60g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 72</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">柑橘</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">清亮</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">冷泡</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="slk-ceylon"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="slk-ceylon"
+                  aria-label="查看 锡兰柑橘红茶 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            class="reveal group rounded-[28px] border border-ink-900/10 bg-white/60 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+            data-product
+            data-id="in-assam"
+            data-region="Assam"
+          >
+            <div class="rounded-[26px] bg-gradient-to-br from-tea-50 via-white to-clay-100 p-5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">印度·阿萨姆 · 红茶</div>
+                  <h3 class="mt-1 font-display text-xl tracking-tight">阿萨姆 CTC</h3>
+                  <div class="mt-2 text-sm text-ink-900/70">适合奶茶基底：浓、厚、香。</div>
+                </div>
+                <div class="shrink-0 rounded-2xl border border-ink-900/10 bg-white/70 px-3 py-2 text-right">
+                  <div class="text-xs text-ink-900/60">80g</div>
+                  <div class="mt-0.5 text-base font-semibold">¥ 55</div>
+                </div>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">麦芽香</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">浓强</span>
+                <span class="rounded-full bg-ink-900/5 px-2.5 py-1 text-xs">奶茶</span>
+              </div>
+              <div class="mt-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-add="in-assam"
+                >
+                  加入购物车
+                </button>
+                <button
+                  type="button"
+                  class="rounded-2xl border border-ink-900/10 bg-white/70 px-4 py-2.5 text-sm font-semibold text-ink-900/80 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                  data-quick="in-assam"
+                  aria-label="查看 阿萨姆 CTC 的冲泡建议"
+                >
+                  冲泡
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div
+          id="emptyState"
+          class="mt-6 hidden rounded-[28px] border border-ink-900/10 bg-white/60 p-8 text-center shadow-sm"
+        >
+          <div class="font-display text-xl">没找到符合条件的茶</div>
+          <p class="mt-2 text-sm text-ink-900/70">试试换一个产区，或者清空筛选。</p>
+        </div>
+      </section>
+
+      <!-- Brew guide -->
+      <section id="brew" class="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <div class="reveal grid gap-6 lg:grid-cols-12">
+          <div class="lg:col-span-5">
+            <h2 class="font-display text-2xl tracking-tight sm:text-3xl">冲泡建议</h2>
+            <p class="mt-2 text-sm leading-relaxed text-ink-900/70">
+              不追求“唯一标准”，而是给你一个稳定的起点：器具、投茶、温度、时间。你可以据此微调，找到自己的口感。
+            </p>
+
+            <div class="mt-6 rounded-[28px] border border-ink-900/10 bg-white/60 p-6 shadow-sm">
+              <div class="flex items-center justify-between">
+                <div class="font-semibold">快速配方</div>
+                <div class="text-xs text-ink-900/60">盖碗 110ml</div>
+              </div>
+              <div class="mt-4 space-y-3 text-sm">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="text-ink-900/70">岩茶</div>
+                  <div class="text-right font-semibold">8g / 100°C / 8s 起</div>
+                </div>
+                <div class="flex items-start justify-between gap-4">
+                  <div class="text-ink-900/70">乌龙</div>
+                  <div class="text-right font-semibold">7g / 98°C / 10s 起</div>
+                </div>
+                <div class="flex items-start justify-between gap-4">
+                  <div class="text-ink-900/70">普洱熟</div>
+                  <div class="text-right font-semibold">6g / 100°C / 10s 起</div>
+                </div>
+                <div class="flex items-start justify-between gap-4">
+                  <div class="text-ink-900/70">绿茶</div>
+                  <div class="text-right font-semibold">3g / 85°C / 40s 起</div>
+                </div>
+                <div class="flex items-start justify-between gap-4">
+                  <div class="text-ink-900/70">红茶</div>
+                  <div class="text-right font-semibold">3g / 95°C / 60s 起</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lg:col-span-7">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="rounded-[28px] border border-ink-900/10 bg-white/60 p-6 shadow-sm">
+                <div class="flex items-center justify-between">
+                  <div class="font-semibold">冷泡也能好喝</div>
+                  <div class="text-xs text-ink-900/60">适合：红茶/乌龙</div>
+                </div>
+                <p class="mt-3 text-sm leading-relaxed text-ink-900/70">
+                  500ml 冷水 + 6g 茶，冰箱 6–8 小时。口感更清甜，果香更明显。
+                </p>
+              </div>
+              <div class="rounded-[28px] border border-ink-900/10 bg-white/60 p-6 shadow-sm">
+                <div class="flex items-center justify-between">
+                  <div class="font-semibold">焙火茶怎么避免苦</div>
+                  <div class="text-xs text-ink-900/60">适合：岩茶</div>
+                </div>
+                <p class="mt-3 text-sm leading-relaxed text-ink-900/70">
+                  前两泡短一点；如果苦，优先降投茶量而不是降水温。
+                </p>
+              </div>
+              <div class="rounded-[28px] border border-ink-900/10 bg-white/60 p-6 shadow-sm">
+                <div class="flex items-center justify-between">
+                  <div class="font-semibold">普洱先醒茶</div>
+                  <div class="text-xs text-ink-900/60">适合：熟普/生普</div>
+                </div>
+                <p class="mt-3 text-sm leading-relaxed text-ink-900/70">
+                  开袋后放置 3–7 天，香气会更干净。冲泡前温杯、润茶 1 次。
+                </p>
+              </div>
+              <div class="rounded-[28px] border border-ink-900/10 bg-white/60 p-6 shadow-sm">
+                <div class="flex items-center justify-between">
+                  <div class="font-semibold">绿茶别烫坏</div>
+                  <div class="text-xs text-ink-900/60">适合：龙井/碧螺春</div>
+                </div>
+                <p class="mt-3 text-sm leading-relaxed text-ink-900/70">
+                  80–85°C 起步，宁可多泡几次也别一泡太久。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Story -->
+      <section id="story" class="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <div class="reveal rounded-[34px] border border-ink-900/10 bg-white/60 p-7 shadow-soft sm:p-10">
+          <div class="grid gap-8 lg:grid-cols-12">
+            <div class="lg:col-span-7">
+              <h2 class="font-display text-2xl tracking-tight sm:text-3xl">我们怎么选茶</h2>
+              <p class="mt-3 text-sm leading-relaxed text-ink-900/70">
+                这不是一个“什么都有”的茶站。我们更像一座小型茶库：每季挑少量批次，把工艺与风味讲清楚。你在这里买到的不是“随便一包茶”，而是一段产区与制茶的结果。
+              </p>
+              <div class="mt-6 grid gap-3 sm:grid-cols-3">
+                <div class="rounded-[22px] border border-ink-900/10 bg-white/70 p-5">
+                  <div class="text-xs text-ink-900/60">优先产区</div>
+                  <div class="mt-1 font-semibold">更稳定的风味</div>
+                </div>
+                <div class="rounded-[22px] border border-ink-900/10 bg-white/70 p-5">
+                  <div class="text-xs text-ink-900/60">拒绝虚标</div>
+                  <div class="mt-1 font-semibold">批次信息透明</div>
+                </div>
+                <div class="rounded-[22px] border border-ink-900/10 bg-white/70 p-5">
+                  <div class="text-xs text-ink-900/60">配方可复现</div>
+                  <div class="mt-1 font-semibold">新手也能泡准</div>
+                </div>
+              </div>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="rounded-[28px] bg-gradient-to-br from-tea-50 via-white to-clay-50 p-6">
+                <div class="text-sm font-semibold">订阅产区上新</div>
+                <p class="mt-2 text-sm leading-relaxed text-ink-900/70">
+                  每月 1–2 封邮件：上新批次、冲泡配方、产区小记。
+                </p>
+                <form class="mt-4 flex flex-col gap-3 sm:flex-row" id="newsletterForm">
+                  <label class="sr-only" for="emailInput">邮箱</label>
+                  <input
+                    id="emailInput"
+                    class="flex-1 rounded-2xl border border-ink-900/10 bg-white px-4 py-2 text-sm outline-none placeholder:text-ink-900/40 focus:ring-2 focus:ring-tea-300"
+                    placeholder="you@example.com"
+                    type="email"
+                    autocomplete="email"
+                    required
+                  />
+                  <button
+                    class="inline-flex items-center justify-center rounded-2xl bg-ink-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                    type="submit"
+                  >
+                    订阅
+                  </button>
+                </form>
+                <div class="mt-3 text-xs text-ink-900/60" id="newsletterHint">
+                  我们不会发送广告，也不会泄露你的邮箱。
+                </div>
+              </div>
+
+              <div class="mt-4 rounded-[28px] border border-ink-900/10 bg-white/60 p-6 shadow-sm">
+                <div class="text-sm font-semibold">客服与配送</div>
+                <div class="mt-2 text-sm text-ink-900/70">工作日 10:00–19:00 在线</div>
+                <div class="mt-1 text-sm text-ink-900/70">同城次日达 / 全国 2–4 天</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="mx-auto max-w-6xl px-4 pb-12 pt-4 sm:px-6">
+        <div class="reveal flex flex-col gap-6 border-t border-ink-900/10 pt-8 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div class="font-display text-lg">山河茶集</div>
+            <div class="mt-1 text-xs text-ink-900/60">© <span id="year"></span> Shanhé Tea. All rights reserved.</div>
+          </div>
+          <div class="flex flex-wrap gap-3 text-sm text-ink-900/70">
+            <a class="hover:text-ink-900" href="#products">商品</a>
+            <a class="hover:text-ink-900" href="#brew">冲泡</a>
+            <a class="hover:text-ink-900" href="#story">关于</a>
+            <a class="hover:text-ink-900" href="#" id="backToTop">返回顶部</a>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Mobile menu -->
+    <div
+      id="mobileMenu"
+      class="fixed inset-0 z-[70] hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="移动端菜单"
+    >
+      <div class="absolute inset-0 bg-ink-900/25 backdrop-blur-sm" data-close-mobile></div>
+      <div class="absolute right-3 top-3 w-[min(92vw,420px)] rounded-[28px] border border-ink-900/10 bg-white p-4 shadow-soft">
+        <div class="flex items-center justify-between">
+          <div class="font-display text-lg">菜单</div>
+          <button
+            class="rounded-2xl border border-ink-900/10 bg-white px-3 py-2 text-sm font-semibold"
+            type="button"
+            data-close-mobile
+          >
+            关闭
+          </button>
+        </div>
+        <div class="mt-3 grid gap-2">
+          <a class="rounded-2xl bg-mist-50 px-4 py-3 text-sm" href="#regions" data-close-mobile>产区</a>
+          <a class="rounded-2xl bg-mist-50 px-4 py-3 text-sm" href="#products" data-close-mobile>好茶</a>
+          <a class="rounded-2xl bg-mist-50 px-4 py-3 text-sm" href="#brew" data-close-mobile>冲泡</a>
+          <a class="rounded-2xl bg-mist-50 px-4 py-3 text-sm" href="#story" data-close-mobile>关于</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cart drawer -->
+    <div
+      id="cartDrawer"
+      class="fixed inset-0 z-[80] hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="购物车"
+    >
+      <div class="absolute inset-0 bg-ink-900/25 backdrop-blur-sm" data-close-cart></div>
+       <div
+         class="absolute right-0 top-0 flex h-full w-[min(92vw,420px)] flex-col border-l border-ink-900/10 bg-white shadow-soft"
+       >
+        <div class="flex items-center justify-between border-b border-ink-900/10 px-5 py-4">
+          <div>
+            <div class="font-display text-xl">购物车</div>
+            <div class="text-xs text-ink-900/60" id="cartMeta">0 件商品</div>
+          </div>
+          <button
+            class="rounded-2xl border border-ink-900/10 bg-white px-3 py-2 text-sm font-semibold"
+            type="button"
+            data-close-cart
+          >
+            关闭
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto px-5 py-4" id="cartItems"></div>
+        <div class="shrink-0 border-t border-ink-900/10 px-5 py-3">
+          <div class="flex items-center justify-between text-sm">
+            <div class="text-ink-900/70">合计</div>
+            <div class="font-semibold" id="cartTotal">¥ 0</div>
+          </div>
+          <button
+            class="mt-2 w-full rounded-2xl bg-ink-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+            type="button"
+            id="checkoutBtn"
+          >
+            去结算
+          </button>
+          <div class="mt-1 text-xs text-ink-900/60">这是静态演示页面：结算会创建一笔演示订单。</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const STORAGE_KEY = "shanhe-tea-cart-v1";
+        const HERO_ROTATE_MS = 4200;
+
+        function svgToData(svg) {
+          return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+        }
+
+        const heroSeedSlides = [
+          {
+            title: "像素晨山·武夷",
+            note: "8-bit 山雾配色",
+            pixelated: true,
+            src: svgToData(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" shape-rendering="crispEdges"><rect width="96" height="72" fill="#12221f"/><rect y="40" width="96" height="32" fill="#1e3b34"/><rect y="52" width="96" height="20" fill="#2c5d50"/><rect x="8" y="35" width="22" height="12" fill="#4c8b74"/><rect x="24" y="27" width="24" height="20" fill="#5ea589"/><rect x="42" y="32" width="26" height="16" fill="#487c68"/><rect x="63" y="28" width="24" height="18" fill="#6ab59a"/><rect x="0" y="0" width="96" height="16" fill="#30564d"/><rect x="8" y="6" width="10" height="4" fill="#86cfb1"/><rect x="20" y="8" width="12" height="4" fill="#7ec2a9"/><rect x="72" y="7" width="14" height="4" fill="#8ad6b8"/><rect x="52" y="10" width="16" height="3" fill="#7ec9ae"/><rect x="34" y="48" width="28" height="16" fill="#d5ad66"/><rect x="38" y="52" width="20" height="12" fill="#f1d28d"/><rect x="44" y="54" width="8" height="8" fill="#6f492f"/></svg>`),
+          },
+          {
+            title: "像素夜市·茶屋",
+            note: "木系暖调占位",
+            pixelated: true,
+            src: svgToData(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" shape-rendering="crispEdges"><rect width="96" height="72" fill="#1a1712"/><rect y="38" width="96" height="34" fill="#2f2a20"/><rect x="10" y="30" width="76" height="26" fill="#3e3326"/><rect x="16" y="34" width="64" height="18" fill="#6b553a"/><rect x="20" y="18" width="56" height="12" fill="#a7793f"/><rect x="24" y="22" width="48" height="4" fill="#d79b58"/><rect x="14" y="54" width="10" height="12" fill="#4d3b2b"/><rect x="72" y="54" width="10" height="12" fill="#4d3b2b"/><rect x="0" y="0" width="96" height="14" fill="#252218"/><rect x="8" y="6" width="5" height="5" fill="#f8d27b"/><rect x="20" y="4" width="4" height="4" fill="#f8d27b"/><rect x="36" y="8" width="6" height="3" fill="#f8d27b"/><rect x="64" y="5" width="5" height="5" fill="#f8d27b"/><rect x="78" y="7" width="4" height="4" fill="#f8d27b"/><rect x="44" y="42" width="8" height="10" fill="#2a2119"/><rect x="30" y="42" width="10" height="8" fill="#7fbc8a"/><rect x="56" y="42" width="10" height="8" fill="#7fbc8a"/></svg>`),
+          },
+          {
+            title: "像素梯田·春茶",
+            note: "高对比绿色块面",
+            pixelated: true,
+            src: svgToData(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" shape-rendering="crispEdges"><rect width="96" height="72" fill="#102018"/><rect y="44" width="96" height="28" fill="#1f3c2c"/><rect y="50" width="96" height="6" fill="#2d5a3f"/><rect y="58" width="96" height="6" fill="#3a744f"/><rect y="66" width="96" height="6" fill="#4a8d5f"/><rect x="0" y="0" width="96" height="20" fill="#17382d"/><rect x="6" y="6" width="18" height="4" fill="#8dd7b2"/><rect x="30" y="8" width="12" height="4" fill="#79c59f"/><rect x="56" y="6" width="16" height="4" fill="#8ad3af"/><rect x="76" y="9" width="14" height="4" fill="#6ebd96"/><rect x="18" y="34" width="20" height="10" fill="#5a9f76"/><rect x="34" y="30" width="22" height="14" fill="#70bf90"/><rect x="52" y="34" width="24" height="10" fill="#5a9f76"/><rect x="42" y="40" width="12" height="20" fill="#b9864c"/><rect x="44" y="42" width="8" height="16" fill="#e0b574"/><rect x="45" y="46" width="6" height="10" fill="#5f4030"/></svg>`),
+          },
+        ];
+
+        const state = {
+          region: null,
+          q: "",
+          cart: {},
+          hero: {
+            slides: heroSeedSlides.map((item) => ({ ...item })),
+            index: 0,
+            timer: null,
+            uploads: 0,
+          },
+        };
+
+        const regions = [
+          { key: "Fujian", label: "福建" },
+          { key: "Yunnan", label: "云南" },
+          { key: "Zhejiang", label: "浙江" },
+          { key: "Taiwan", label: "台湾" },
+          { key: "SriLanka", label: "斯里兰卡" },
+          { key: "Assam", label: "印度·阿萨姆" },
+        ];
+
+        const products = [
+          {
+            id: "fj-rougui",
+            name: "武夷肉桂",
+            region: "Fujian",
+            style: "乌龙·岩茶",
+            price: 68,
+            weight: "50g",
+            tasting: ["桂皮香", "焙火", "岩韵"],
+            note: "香气辛甜，汤感饱满，回甘利落。",
+          },
+          {
+            id: "fj-baimudan",
+            name: "白牡丹",
+            region: "Fujian",
+            style: "白茶",
+            price: 58,
+            weight: "50g",
+            tasting: ["花香", "清甜", "柔润"],
+            note: "花香清雅，入口甘润，适合日常。",
+          },
+          {
+            id: "yn-lincang-shu",
+            name: "临沧古树熟普",
+            region: "Yunnan",
+            style: "普洱·熟茶",
+            price: 88,
+            weight: "100g",
+            tasting: ["醇滑", "糯甜", "陈香"],
+            note: "汤感厚而不闷，甜度稳定，耐泡。",
+          },
+          {
+            id: "yn-dianhong",
+            name: "凤庆滇红",
+            region: "Yunnan",
+            style: "红茶",
+            price: 62,
+            weight: "60g",
+            tasting: ["蜜香", "红薯甜", "暖意"],
+            note: "蜜香明显，适合秋冬，亦可加奶。",
+          },
+          {
+            id: "zj-longjing",
+            name: "明前龙井",
+            region: "Zhejiang",
+            style: "绿茶",
+            price: 98,
+            weight: "50g",
+            tasting: ["豆香", "鲜爽", "清甜"],
+            note: "鲜爽度高，豆香显，尾段回甘清晰。",
+          },
+          {
+            id: "tw-gaoshan",
+            name: "高山乌龙",
+            region: "Taiwan",
+            style: "乌龙",
+            price: 92,
+            weight: "50g",
+            tasting: ["兰花香", "奶香", "甘润"],
+            note: "花香高扬，汤水细，冷泡也出彩。",
+          },
+          {
+            id: "slk-ceylon",
+            name: "锡兰柑橘红茶",
+            region: "SriLanka",
+            style: "红茶",
+            price: 72,
+            weight: "60g",
+            tasting: ["柑橘", "清亮", "冷泡"],
+            note: "果香干净，适合做冰红茶或冷泡。",
+          },
+          {
+            id: "in-assam",
+            name: "阿萨姆 CTC",
+            region: "Assam",
+            style: "红茶",
+            price: 55,
+            weight: "80g",
+            tasting: ["麦芽香", "浓强", "奶茶"],
+            note: "适合奶茶基底：浓、厚、香。",
+          },
+        ];
+
+        function $(sel, root = document) {
+          return root.querySelector(sel);
+        }
+
+        function money(n) {
+          return `¥ ${n}`;
+        }
+
+        async function postJSON(url, data) {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+
+          let payload = null;
+          try {
+            payload = await res.json();
+          } catch {
+            // Ignore non-JSON.
+          }
+
+          if (!res.ok) {
+            const msg = payload?.detail || payload?.message || `HTTP ${res.status}`;
+            throw new Error(msg);
+          }
+          return payload;
+        }
+
+        function loadCart() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") state.cart = parsed;
+          } catch {
+            // Ignore invalid storage.
+          }
+        }
+
+        function saveCart() {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cart));
+          } catch {
+            // Ignore quota errors.
+          }
+        }
+
+        function cartCount() {
+          return Object.values(state.cart).reduce((acc, n) => acc + n, 0);
+        }
+
+        function cartTotal() {
+          let total = 0;
+          for (const [id, qty] of Object.entries(state.cart)) {
+            const p = products.find((x) => x.id === id);
+            if (p) total += p.price * qty;
+          }
+          return total;
+        }
+
+        function setRegion(next) {
+          state.region = next;
+          syncChips();
+          syncFlavorMap();
+          syncProducts();
+        }
+
+        function setHeroIndex(next, restartTimer = false) {
+          const total = state.hero.slides.length;
+          if (total === 0) return;
+          state.hero.index = ((next % total) + total) % total;
+          renderHeroCarousel();
+          if (restartTimer) startHeroRotation();
+        }
+
+        function startHeroRotation() {
+          if (state.hero.timer) {
+            clearInterval(state.hero.timer);
+            state.hero.timer = null;
+          }
+          if (state.hero.slides.length < 2) return;
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+          state.hero.timer = window.setInterval(() => {
+            setHeroIndex(state.hero.index + 1, false);
+          }, HERO_ROTATE_MS);
+        }
+
+        function pauseHeroRotation() {
+          if (!state.hero.timer) return;
+          clearInterval(state.hero.timer);
+          state.hero.timer = null;
+        }
+
+        function renderHeroCarousel() {
+          const slidesRoot = $("#heroSlides");
+          const dotsRoot = $("#heroDots");
+          const meta = $("#heroSlideMeta");
+          const hint = $("#heroUploadHint");
+          const prev = $("#heroPrev");
+          const next = $("#heroNext");
+          if (!slidesRoot || !dotsRoot || !meta || !hint || !prev || !next) return;
+
+          const total = state.hero.slides.length;
+          slidesRoot.innerHTML = "";
+          dotsRoot.innerHTML = "";
+
+          if (total === 0) {
+            meta.textContent = "请先上传头图";
+            hint.textContent = "当前没有可用头图";
+            prev.disabled = true;
+            next.disabled = true;
+            return;
+          }
+
+          state.hero.index = ((state.hero.index % total) + total) % total;
+          state.hero.slides.forEach((slide, idx) => {
+            const panel = document.createElement("div");
+            panel.className = `hero-slide${idx === state.hero.index ? " is-active" : ""}${slide.pixelated ? " hero-slide-pixel" : ""}`;
+            panel.style.backgroundImage = `url("${slide.src}")`;
+            panel.setAttribute("role", "img");
+            panel.setAttribute("aria-label", `${slide.title}，${slide.note}`);
+            slidesRoot.appendChild(panel);
+
+            const dot = document.createElement("button");
+            dot.type = "button";
+            dot.className = `hero-dot${idx === state.hero.index ? " is-active" : ""}`;
+            dot.setAttribute("aria-label", `跳转到第 ${idx + 1} 张头图`);
+            dot.setAttribute("aria-pressed", idx === state.hero.index ? "true" : "false");
+            dot.setAttribute("data-hero-dot", String(idx));
+            dotsRoot.appendChild(dot);
+          });
+
+          const active = state.hero.slides[state.hero.index];
+          meta.textContent = `${active.title} · ${active.note}`;
+          hint.textContent =
+            state.hero.uploads > 0
+              ? `已上传 ${state.hero.uploads} 张头图，正在轮换 ${total} 张`
+              : `默认像素艺术头图 ${total} 张`;
+
+          const disabled = total < 2;
+          prev.disabled = disabled;
+          next.disabled = disabled;
+        }
+
+        function bindHeroCarousel() {
+          const box = $("#heroCarousel");
+          const uploadInput = $("#heroUploadInput");
+          const dotsRoot = $("#heroDots");
+          if (!box || !uploadInput || !dotsRoot) return;
+
+          $("#heroPrev")?.addEventListener("click", () => setHeroIndex(state.hero.index - 1, true));
+          $("#heroNext")?.addEventListener("click", () => setHeroIndex(state.hero.index + 1, true));
+
+          dotsRoot.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const btn = target.closest("[data-hero-dot]");
+            if (!btn) return;
+            const idx = Number(btn.getAttribute("data-hero-dot"));
+            if (Number.isNaN(idx)) return;
+            setHeroIndex(idx, true);
+          });
+
+          uploadInput.addEventListener("change", (event) => {
+            const input = event.target;
+            if (!(input instanceof HTMLInputElement)) return;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith("image/")) {
+              const hint = $("#heroUploadHint");
+              if (hint) hint.textContent = "上传失败：请选择图片文件";
+              input.value = "";
+              return;
+            }
+
+            const src = URL.createObjectURL(file);
+            const name = file.name.replace(/\.[^.]+$/, "").trim();
+            state.hero.slides.push({
+              title: name || `自定义头图 ${state.hero.uploads + 1}`,
+              note: "用户上传",
+              pixelated: false,
+              src,
+            });
+            state.hero.uploads += 1;
+            state.hero.index = state.hero.slides.length - 1;
+            renderHeroCarousel();
+            startHeroRotation();
+            input.value = "";
+          });
+
+          box.addEventListener("mouseenter", pauseHeroRotation);
+          box.addEventListener("mouseleave", startHeroRotation);
+          box.addEventListener("focusin", pauseHeroRotation);
+          box.addEventListener("focusout", (event) => {
+            const related = event.relatedTarget;
+            if (related instanceof Node && box.contains(related)) return;
+            startHeroRotation();
+          });
+
+          renderHeroCarousel();
+          startHeroRotation();
+        }
+
+        function matches(p) {
+          if (state.region && p.region !== state.region) return false;
+          const q = state.q.trim().toLowerCase();
+          if (!q) return true;
+          const hay = `${p.name} ${p.style} ${p.weight} ${p.tasting.join(" ")} ${p.note}`.toLowerCase();
+          return hay.includes(q);
+        }
+
+        function syncChips() {
+          document.querySelectorAll("#regionChips [data-chip]").forEach((btn) => {
+            const key = btn.getAttribute("data-chip");
+            const active = key && state.region === key;
+            btn.setAttribute("aria-pressed", active ? "true" : "false");
+            btn.classList.toggle("border-ink-900", active);
+            btn.classList.toggle("bg-ink-900", active);
+            btn.classList.toggle("text-white", active);
+            btn.classList.toggle("shadow-sm", !active);
+            btn.classList.toggle("border-ink-900/10", !active);
+            btn.classList.toggle("bg-white/70", !active);
+            btn.classList.toggle("text-ink-900/70", !active);
+          });
+        }
+
+        function syncFlavorMap() {
+          document.querySelectorAll("[data-map-region]").forEach((el) => {
+            const key = el.getAttribute("data-map-region");
+            const active = key && state.region === key;
+            el.classList.toggle("is-active", active);
+            el.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+
+          document.querySelectorAll("[data-map-chip]").forEach((btn) => {
+            const key = btn.getAttribute("data-map-chip");
+            const active = key && state.region === key;
+            btn.setAttribute("aria-pressed", active ? "true" : "false");
+            btn.classList.toggle("bg-white", active);
+            btn.classList.toggle("text-ink-900", active);
+            btn.classList.toggle("border-white", active);
+            btn.classList.toggle("shadow-sm", active);
+            btn.classList.toggle("bg-white/10", !active);
+            btn.classList.toggle("text-white/80", !active);
+            btn.classList.toggle("border-white/20", !active);
+          });
+        }
+
+        function syncProducts() {
+          let visible = 0;
+          for (const p of products) {
+            const card = document.querySelector(`[data-product][data-id='${p.id}']`);
+            if (!card) continue;
+            const ok = matches(p);
+            card.classList.toggle("hidden", !ok);
+            if (ok) visible += 1;
+          }
+          $("#emptyState").classList.toggle("hidden", visible !== 0);
+        }
+
+        function cartRow(p, qty) {
+          return `
+            <div class="rounded-[22px] border border-ink-900/10 bg-mist-50 p-4">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-xs text-ink-900/60">${regions.find((r) => r.key === p.region)?.label || p.region} · ${p.style}</div>
+                  <div class="mt-1 font-semibold">${p.name}</div>
+                  <div class="mt-1 text-xs text-ink-900/60">${p.weight}</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-semibold">${money(p.price * qty)}</div>
+                  <div class="mt-2 inline-flex items-center gap-2">
+                    <button class="rounded-2xl border border-ink-900/10 bg-white px-3 py-2 text-sm" type="button" data-dec="${p.id}" aria-label="减少 ${p.name}">-</button>
+                    <div class="text-center text-sm font-semibold" style="width: 32px">${qty}</div>
+                    <button class="rounded-2xl border border-ink-900/10 bg-white px-3 py-2 text-sm" type="button" data-inc="${p.id}" aria-label="增加 ${p.name}">+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        function renderCart() {
+          const count = cartCount();
+          $("#cartCount").textContent = String(count);
+          $("#cartMeta").textContent = `${count} 件商品`;
+          $("#cartTotal").textContent = money(cartTotal());
+
+          const items = $("#cartItems");
+          const rows = [];
+          for (const [id, qty] of Object.entries(state.cart)) {
+            if (!qty) continue;
+            const p = products.find((x) => x.id === id);
+            if (!p) continue;
+            rows.push(cartRow(p, qty));
+          }
+
+          if (rows.length === 0) {
+            items.innerHTML = `
+              <div class="rounded-[22px] border border-ink-900/10 bg-white p-6 text-center">
+                <div class="font-display text-xl">购物车还是空的</div>
+                <p class="mt-2 text-sm text-ink-900/70">从产区风味开始，选一款更对味的茶。</p>
+                <a class="mt-4 inline-flex items-center justify-center rounded-2xl bg-ink-900 px-4 py-2 text-sm font-semibold text-white" href="#products" data-close-cart>
+                  去选茶
+                </a>
+              </div>
+            `;
+          } else {
+            items.innerHTML = rows.join("");
+          }
+
+          items.querySelectorAll("[data-inc]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const id = btn.getAttribute("data-inc");
+              state.cart[id] = (state.cart[id] || 0) + 1;
+              saveCart();
+              renderCart();
+            });
+          });
+          items.querySelectorAll("[data-dec]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const id = btn.getAttribute("data-dec");
+              const next = (state.cart[id] || 0) - 1;
+              if (next <= 0) delete state.cart[id];
+              else state.cart[id] = next;
+              saveCart();
+              renderCart();
+            });
+          });
+          items.querySelectorAll("[data-close-cart]").forEach((a) => a.addEventListener("click", closeCart));
+        }
+
+        function openCart() {
+          $("#cartDrawer").classList.remove("hidden");
+          document.body.classList.add("overflow-hidden");
+        }
+
+        function closeCart() {
+          $("#cartDrawer").classList.add("hidden");
+          document.body.classList.remove("overflow-hidden");
+        }
+
+        function openMobile() {
+          $("#mobileMenu").classList.remove("hidden");
+          document.body.classList.add("overflow-hidden");
+        }
+
+        function closeMobile() {
+          $("#mobileMenu").classList.add("hidden");
+          document.body.classList.remove("overflow-hidden");
+        }
+
+        function bindTopInteractions() {
+          $("#year").textContent = String(new Date().getFullYear());
+          bindHeroCarousel();
+
+          // Nav CTA shine
+          const cta = document.querySelector("a[href='#products']");
+          cta?.addEventListener("mouseenter", () => {
+            const el = cta.querySelector("[data-shine]");
+            if (!el) return;
+            el.classList.add("opacity-100", "is-shining");
+            setTimeout(() => el.classList.remove("opacity-100", "is-shining"), 720);
+          });
+
+          $("#openCart").addEventListener("click", () => {
+            renderCart();
+            openCart();
+          });
+          document.querySelectorAll("[data-close-cart]").forEach((x) => x.addEventListener("click", closeCart));
+          document.querySelectorAll("[data-close-mobile]").forEach((x) => x.addEventListener("click", closeMobile));
+          $("#openMenu").addEventListener("click", openMobile);
+
+          $("#checkoutBtn").addEventListener("click", () => {
+            const items = Object.entries(state.cart).map(([id, qty]) => ({ id, qty }));
+            if (items.length === 0) {
+              alert("购物车为空：先加入几款茶再结算。");
+              return;
+            }
+
+            postJSON("/api/checkout", { items })
+              .then((data) => {
+                alert(`下单成功（演示）\n订单号：${data.order_id}\n合计：${money(data.total)}`);
+                state.cart = {};
+                saveCart();
+                renderCart();
+                closeCart();
+              })
+              .catch((err) => {
+                alert(`结算失败（可能后端未启动）：${err.message || err}`);
+              });
+          });
+
+          $("#clearFilters").addEventListener("click", () => {
+            state.region = null;
+            state.q = "";
+            $("#searchInput").value = "";
+            syncChips();
+            syncFlavorMap();
+            syncProducts();
+          });
+
+          $("#searchInput").addEventListener("input", (e) => {
+            state.q = e.target.value;
+            syncProducts();
+          });
+
+          // Region cards act like toggles.
+          // NOTE: product cards also have data-region; scope this to the regions section.
+          document.querySelectorAll("#regions [data-region]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const key = btn.getAttribute("data-region");
+              setRegion(state.region === key ? null : key);
+              document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+            });
+          });
+
+          document.querySelectorAll("[data-map-region]").forEach((el) => {
+            const key = el.getAttribute("data-map-region");
+            if (!key) return;
+
+            const toggleRegion = () => {
+              setRegion(state.region === key ? null : key);
+              document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+            };
+
+            el.addEventListener("click", toggleRegion);
+            el.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              toggleRegion();
+            });
+          });
+
+          document.querySelectorAll("[data-map-chip]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const key = btn.getAttribute("data-map-chip");
+              setRegion(state.region === key ? null : key);
+              document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+            });
+          });
+
+          document.querySelectorAll("#regionChips [data-chip]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const key = btn.getAttribute("data-chip");
+              setRegion(state.region === key ? null : key);
+              document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+            });
+          });
+
+          document.querySelectorAll("#productGrid [data-add]").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              const id = btn.getAttribute("data-add");
+              if (!id) return;
+              state.cart[id] = (state.cart[id] || 0) + 1;
+              saveCart();
+              renderCart();
+
+              const original = btn.textContent;
+              btn.textContent = "已加入";
+              setTimeout(() => {
+                btn.textContent = original;
+              }, 700);
+            });
+          });
+
+          document.querySelectorAll("#productGrid [data-quick]").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              document.getElementById("brew")?.scrollIntoView({ behavior: "smooth" });
+            });
+          });
+
+          $("#backToTop").addEventListener("click", (e) => {
+            e.preventDefault();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          });
+
+          $("#newsletterForm").addEventListener("submit", (e) => {
+            e.preventDefault();
+            const input = $("#emailInput");
+            const hint = $("#newsletterHint");
+
+            const email = input.value.trim();
+            if (!email) return;
+
+            hint.textContent = "正在订阅...";
+            postJSON("/api/newsletter/subscribe", { email })
+              .then((data) => {
+                hint.textContent = `已订阅：${data.email}（演示）`;
+                input.value = "";
+              })
+              .catch((err) => {
+                hint.textContent = `订阅失败（可能后端未启动）：${err.message || err}`;
+              });
+          });
+
+          // Close on Escape.
+          window.addEventListener("keydown", (e) => {
+            if (e.key !== "Escape") return;
+            closeCart();
+            closeMobile();
+          });
+        }
+
+        function kickReveal(nodes = document.querySelectorAll(".reveal")) {
+          const list = Array.from(nodes);
+          const canObserve = "IntersectionObserver" in window;
+          if (!canObserve) {
+            list.forEach((el) => el.classList.add("is-in"));
+            return;
+          }
+          const io = new IntersectionObserver(
+            (entries) => {
+              for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                entry.target.classList.add("is-in");
+                io.unobserve(entry.target);
+              }
+            },
+            { threshold: 0.14 }
+          );
+          list.forEach((el, i) => {
+            el.style.transitionDelay = `${Math.min(i * 50, 260)}ms`;
+            io.observe(el);
+          });
+        }
+
+        loadCart();
+        bindTopInteractions();
+        syncChips();
+        syncFlavorMap();
+        syncProducts();
+        renderCart();
+        kickReveal();
+      })();
+    </script>
+  </body>
+</html>
