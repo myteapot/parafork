@@ -1,4 +1,9 @@
-### Parafork是一个基于git worktree的并行多会话开发skill
+### Parafork
+一个基于Git worktree的会话隔离Skill，用于多窗口并行开发，使每个窗口专注于单一任务，提高工作效率并减轻agent心智负担
+##### Structure：
+- Parafork [Skill文件夹]
+- Examples [用于存储教程中的示例网页]
+
 ##### compatibility:
 支持在windows/linux/wsl下使用
 
