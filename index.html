@@ -140,6 +140,35 @@
       .is-shining {
         animation: shineSweep 700ms ease-in-out;
       }
+      .hero-slide {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        transform: scale(1.04);
+        transition: opacity 520ms ease, transform 520ms ease;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: cover;
+      }
+      .hero-slide.is-active {
+        opacity: 1;
+        transform: scale(1);
+      }
+      .hero-slide-pixel {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      .hero-dot {
+        height: 10px;
+        width: 10px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.36);
+        transition: transform 220ms ease, background-color 220ms ease;
+      }
+      .hero-dot.is-active {
+        transform: scale(1.14);
+        background: rgba(255, 255, 255, 0.96);
+      }
       @media (prefers-reduced-motion: reduce) {
         .reveal {
           opacity: 1;
@@ -149,6 +178,10 @@
         .reduce-motion {
           animation: none !important;
           transition: none !important;
+        }
+        .hero-slide {
+          transition: none;
+          transform: none;
         }
       }
     </style>
@@ -318,51 +351,64 @@
                 ></div>
 
                 <div class="rounded-[28px] border border-ink-900/10 bg-white/60 p-4 shadow-soft backdrop-blur">
-                  <div class="rounded-[22px] bg-gradient-to-br from-ink-900 via-ink-800 to-ink-700 p-6 text-white">
-                    <div class="flex items-start justify-between gap-6">
+                  <div class="rounded-[22px] bg-gradient-to-br from-ink-900 via-ink-800 to-ink-700 p-5 text-white">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
                       <div>
-                        <div class="text-xs text-white/70">风味地图 / Flavor Atlas</div>
+                        <div class="text-xs text-white/70">轮换头图 / Hero Rotator</div>
                         <div class="mt-2 font-display text-2xl leading-tight">
-                          按产区挑茶
+                          像素艺术头图
                         </div>
                         <p class="mt-2 max-w-sm text-sm leading-relaxed text-white/80">
-                          一杯茶的个性，来自地理、工艺与季节。用地图的方式，把“哪里好喝”说清楚。
+                          默认轮换 3 张像素艺术头图。上传后会自动加入轮换队列，可继续随时替换。
                         </p>
                       </div>
-                      <div class="hidden sm:block">
-                        <div class="rounded-2xl bg-white/10 p-3">
-                          <div class="text-xs text-white/70">今日推荐</div>
-                          <div class="mt-1 text-sm font-semibold">武夷肉桂</div>
-                          <div class="mt-1 text-xs text-white/70">焙火 · 桂皮香 · 岩韵</div>
+                      <label
+                        class="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus-within:ring-2 focus-within:ring-tea-300"
+                      >
+                        上传头图
+                        <input id="heroUploadInput" class="sr-only" type="file" accept="image/*" />
+                      </label>
+                    </div>
+
+                    <div
+                      id="heroCarousel"
+                      class="group relative mt-5 aspect-[4/3] overflow-hidden rounded-2xl border border-white/20 bg-ink-900/35 sm:aspect-[16/10]"
+                      aria-live="polite"
+                    >
+                      <div id="heroSlides" class="absolute inset-0"></div>
+                      <div
+                        class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
+                        aria-hidden="true"
+                      ></div>
+                      <div class="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
+                        <div class="max-w-[72%]">
+                          <div class="text-[11px] uppercase tracking-[0.16em] text-white/70">当前头图</div>
+                          <div id="heroSlideMeta" class="mt-1 text-sm font-semibold">像素头图已就绪</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <button
+                            id="heroPrev"
+                            class="rounded-xl border border-white/25 bg-black/35 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                            type="button"
+                            aria-label="上一张头图"
+                          >
+                            上一张
+                          </button>
+                          <button
+                            id="heroNext"
+                            class="rounded-xl border border-white/25 bg-black/35 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-tea-300"
+                            type="button"
+                            aria-label="下一张头图"
+                          >
+                            下一张
+                          </button>
                         </div>
                       </div>
                     </div>
 
-                    <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">福建</div>
-                        <div class="mt-1 text-sm font-semibold">岩茶/白茶</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">云南</div>
-                        <div class="mt-1 text-sm font-semibold">普洱/滇红</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">浙江</div>
-                        <div class="mt-1 text-sm font-semibold">绿茶</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">台湾</div>
-                        <div class="mt-1 text-sm font-semibold">乌龙</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">斯里兰卡</div>
-                        <div class="mt-1 text-sm font-semibold">红茶</div>
-                      </div>
-                      <div class="rounded-2xl bg-white/10 p-3">
-                        <div class="text-xs text-white/70">印度</div>
-                        <div class="mt-1 text-sm font-semibold">阿萨姆</div>
-                      </div>
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <div id="heroDots" class="flex items-center gap-1.5" aria-label="头图切换"></div>
+                      <div id="heroUploadHint" class="text-xs text-white/70">默认像素艺术头图 3 张</div>
                     </div>
                   </div>
 
@@ -1281,10 +1327,43 @@
     <script>
       (function () {
         const STORAGE_KEY = "shanhe-tea-cart-v1";
+        const HERO_ROTATE_MS = 4200;
+
+        function svgToData(svg) {
+          return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+        }
+
+        const heroSeedSlides = [
+          {
+            title: "像素晨山·武夷",
+            note: "8-bit 山雾配色",
+            pixelated: true,
+            src: svgToData(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" shape-rendering="crispEdges"><rect width="96" height="72" fill="#12221f"/><rect y="40" width="96" height="32" fill="#1e3b34"/><rect y="52" width="96" height="20" fill="#2c5d50"/><rect x="8" y="35" width="22" height="12" fill="#4c8b74"/><rect x="24" y="27" width="24" height="20" fill="#5ea589"/><rect x="42" y="32" width="26" height="16" fill="#487c68"/><rect x="63" y="28" width="24" height="18" fill="#6ab59a"/><rect x="0" y="0" width="96" height="16" fill="#30564d"/><rect x="8" y="6" width="10" height="4" fill="#86cfb1"/><rect x="20" y="8" width="12" height="4" fill="#7ec2a9"/><rect x="72" y="7" width="14" height="4" fill="#8ad6b8"/><rect x="52" y="10" width="16" height="3" fill="#7ec9ae"/><rect x="34" y="48" width="28" height="16" fill="#d5ad66"/><rect x="38" y="52" width="20" height="12" fill="#f1d28d"/><rect x="44" y="54" width="8" height="8" fill="#6f492f"/></svg>`),
+          },
+          {
+            title: "像素夜市·茶屋",
+            note: "木系暖调占位",
+            pixelated: true,
+            src: svgToData(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" shape-rendering="crispEdges"><rect width="96" height="72" fill="#1a1712"/><rect y="38" width="96" height="34" fill="#2f2a20"/><rect x="10" y="30" width="76" height="26" fill="#3e3326"/><rect x="16" y="34" width="64" height="18" fill="#6b553a"/><rect x="20" y="18" width="56" height="12" fill="#a7793f"/><rect x="24" y="22" width="48" height="4" fill="#d79b58"/><rect x="14" y="54" width="10" height="12" fill="#4d3b2b"/><rect x="72" y="54" width="10" height="12" fill="#4d3b2b"/><rect x="0" y="0" width="96" height="14" fill="#252218"/><rect x="8" y="6" width="5" height="5" fill="#f8d27b"/><rect x="20" y="4" width="4" height="4" fill="#f8d27b"/><rect x="36" y="8" width="6" height="3" fill="#f8d27b"/><rect x="64" y="5" width="5" height="5" fill="#f8d27b"/><rect x="78" y="7" width="4" height="4" fill="#f8d27b"/><rect x="44" y="42" width="8" height="10" fill="#2a2119"/><rect x="30" y="42" width="10" height="8" fill="#7fbc8a"/><rect x="56" y="42" width="10" height="8" fill="#7fbc8a"/></svg>`),
+          },
+          {
+            title: "像素梯田·春茶",
+            note: "高对比绿色块面",
+            pixelated: true,
+            src: svgToData(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" shape-rendering="crispEdges"><rect width="96" height="72" fill="#102018"/><rect y="44" width="96" height="28" fill="#1f3c2c"/><rect y="50" width="96" height="6" fill="#2d5a3f"/><rect y="58" width="96" height="6" fill="#3a744f"/><rect y="66" width="96" height="6" fill="#4a8d5f"/><rect x="0" y="0" width="96" height="20" fill="#17382d"/><rect x="6" y="6" width="18" height="4" fill="#8dd7b2"/><rect x="30" y="8" width="12" height="4" fill="#79c59f"/><rect x="56" y="6" width="16" height="4" fill="#8ad3af"/><rect x="76" y="9" width="14" height="4" fill="#6ebd96"/><rect x="18" y="34" width="20" height="10" fill="#5a9f76"/><rect x="34" y="30" width="22" height="14" fill="#70bf90"/><rect x="52" y="34" width="24" height="10" fill="#5a9f76"/><rect x="42" y="40" width="12" height="20" fill="#b9864c"/><rect x="44" y="42" width="8" height="16" fill="#e0b574"/><rect x="45" y="46" width="6" height="10" fill="#5f4030"/></svg>`),
+          },
+        ];
+
         const state = {
           region: null,
           q: "",
           cart: {},
+          hero: {
+            slides: heroSeedSlides.map((item) => ({ ...item })),
+            index: 0,
+            timer: null,
+            uploads: 0,
+          },
         };
 
         const regions = [
@@ -1446,6 +1525,143 @@
           syncProducts();
         }
 
+        function setHeroIndex(next, restartTimer = false) {
+          const total = state.hero.slides.length;
+          if (total === 0) return;
+          state.hero.index = ((next % total) + total) % total;
+          renderHeroCarousel();
+          if (restartTimer) startHeroRotation();
+        }
+
+        function startHeroRotation() {
+          if (state.hero.timer) {
+            clearInterval(state.hero.timer);
+            state.hero.timer = null;
+          }
+          if (state.hero.slides.length < 2) return;
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+          state.hero.timer = window.setInterval(() => {
+            setHeroIndex(state.hero.index + 1, false);
+          }, HERO_ROTATE_MS);
+        }
+
+        function pauseHeroRotation() {
+          if (!state.hero.timer) return;
+          clearInterval(state.hero.timer);
+          state.hero.timer = null;
+        }
+
+        function renderHeroCarousel() {
+          const slidesRoot = $("#heroSlides");
+          const dotsRoot = $("#heroDots");
+          const meta = $("#heroSlideMeta");
+          const hint = $("#heroUploadHint");
+          const prev = $("#heroPrev");
+          const next = $("#heroNext");
+          if (!slidesRoot || !dotsRoot || !meta || !hint || !prev || !next) return;
+
+          const total = state.hero.slides.length;
+          slidesRoot.innerHTML = "";
+          dotsRoot.innerHTML = "";
+
+          if (total === 0) {
+            meta.textContent = "请先上传头图";
+            hint.textContent = "当前没有可用头图";
+            prev.disabled = true;
+            next.disabled = true;
+            return;
+          }
+
+          state.hero.index = ((state.hero.index % total) + total) % total;
+          state.hero.slides.forEach((slide, idx) => {
+            const panel = document.createElement("div");
+            panel.className = `hero-slide${idx === state.hero.index ? " is-active" : ""}${slide.pixelated ? " hero-slide-pixel" : ""}`;
+            panel.style.backgroundImage = `url("${slide.src}")`;
+            panel.setAttribute("role", "img");
+            panel.setAttribute("aria-label", `${slide.title}，${slide.note}`);
+            slidesRoot.appendChild(panel);
+
+            const dot = document.createElement("button");
+            dot.type = "button";
+            dot.className = `hero-dot${idx === state.hero.index ? " is-active" : ""}`;
+            dot.setAttribute("aria-label", `跳转到第 ${idx + 1} 张头图`);
+            dot.setAttribute("aria-pressed", idx === state.hero.index ? "true" : "false");
+            dot.setAttribute("data-hero-dot", String(idx));
+            dotsRoot.appendChild(dot);
+          });
+
+          const active = state.hero.slides[state.hero.index];
+          meta.textContent = `${active.title} · ${active.note}`;
+          hint.textContent =
+            state.hero.uploads > 0
+              ? `已上传 ${state.hero.uploads} 张头图，正在轮换 ${total} 张`
+              : `默认像素艺术头图 ${total} 张`;
+
+          const disabled = total < 2;
+          prev.disabled = disabled;
+          next.disabled = disabled;
+        }
+
+        function bindHeroCarousel() {
+          const box = $("#heroCarousel");
+          const uploadInput = $("#heroUploadInput");
+          const dotsRoot = $("#heroDots");
+          if (!box || !uploadInput || !dotsRoot) return;
+
+          $("#heroPrev")?.addEventListener("click", () => setHeroIndex(state.hero.index - 1, true));
+          $("#heroNext")?.addEventListener("click", () => setHeroIndex(state.hero.index + 1, true));
+
+          dotsRoot.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const btn = target.closest("[data-hero-dot]");
+            if (!btn) return;
+            const idx = Number(btn.getAttribute("data-hero-dot"));
+            if (Number.isNaN(idx)) return;
+            setHeroIndex(idx, true);
+          });
+
+          uploadInput.addEventListener("change", (event) => {
+            const input = event.target;
+            if (!(input instanceof HTMLInputElement)) return;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith("image/")) {
+              const hint = $("#heroUploadHint");
+              if (hint) hint.textContent = "上传失败：请选择图片文件";
+              input.value = "";
+              return;
+            }
+
+            const src = URL.createObjectURL(file);
+            const name = file.name.replace(/\.[^.]+$/, "").trim();
+            state.hero.slides.push({
+              title: name || `自定义头图 ${state.hero.uploads + 1}`,
+              note: "用户上传",
+              pixelated: false,
+              src,
+            });
+            state.hero.uploads += 1;
+            state.hero.index = state.hero.slides.length - 1;
+            renderHeroCarousel();
+            startHeroRotation();
+            input.value = "";
+          });
+
+          box.addEventListener("mouseenter", pauseHeroRotation);
+          box.addEventListener("mouseleave", startHeroRotation);
+          box.addEventListener("focusin", pauseHeroRotation);
+          box.addEventListener("focusout", (event) => {
+            const related = event.relatedTarget;
+            if (related instanceof Node && box.contains(related)) return;
+            startHeroRotation();
+          });
+
+          renderHeroCarousel();
+          startHeroRotation();
+        }
+
         function matches(p) {
           if (state.region && p.region !== state.region) return false;
           const q = state.q.trim().toLowerCase();
@@ -1575,6 +1791,7 @@
 
         function bindTopInteractions() {
           $("#year").textContent = String(new Date().getFullYear());
+          bindHeroCarousel();
 
           // Nav CTA shine
           const cta = document.querySelector("a[href='#products']");
