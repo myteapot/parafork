@@ -38,5 +38,5 @@ flowchart LR
 
 
 ##### How to use：
-教程（准备中）
+对应教程：https://linux.do/t/topic/1576236
 
