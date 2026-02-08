@@ -4,7 +4,8 @@
 
 
 #### Parafork
-**Parafork = (Parallel + Fork)**
+>**Parafork = (Parallel + Fork)**
+
 基于git worktree的会话隔离Skill，用于多窗口并发，使每窗口专注于单组任务，提高效率并减轻agent心智负担
 
 ##### How to install：
